@@ -1,3 +1,8 @@
+## 2026.40.0 — 2026-10-03
+
+### 🐛 Fixes
+- use the ISO week-year for release versions (`7cc2336`)
+
 ## 2026.39.1 — 2026-09-24
 
 ### 🐛 Fixes
