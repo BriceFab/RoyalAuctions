@@ -60,16 +60,16 @@ public final class ListingsGui extends AuctionGui {
             List<String> lore = new ArrayList<>();
             lore.add("");
             if (listing.isAuction()) {
-                lore.add("&7Type: &dAuction");
-                lore.add("&7Current bid: &a" + manager.vault().format(listing.displayPrice()));
-                lore.add("&7Bids: &f" + listing.bidCount());
+                lore.add(manager.t("type-line", "type", manager.t("type.auction")));
+                lore.add(manager.t("current-bid", "price", manager.vault().format(listing.displayPrice())));
+                lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             } else {
-                lore.add("&7Type: &bBuy It Now");
-                lore.add("&7Price: &a" + manager.vault().format(listing.price()));
+                lore.add(manager.t("type-line", "type", manager.t("type.bin")));
+                lore.add(manager.t("price", "price", manager.vault().format(listing.price())));
             }
-            lore.add("&7Ends in: &f" + GuiUtil.timeLeft(remaining));
+            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(remaining)));
             lore.add("");
-            lore.add(listing.hasBids() ? "&cCan't cancel — this auction has bids" : "&cRight-click to cancel");
+            lore.add(manager.t(listing.hasBids() ? "cannot-cancel" : "right-click-cancel"));
             ItemStack icon = GuiUtil.appendLore(listing.item(), lore);
             inventory.setItem(slot, icon);
             slotToListing.put(slot, listing);

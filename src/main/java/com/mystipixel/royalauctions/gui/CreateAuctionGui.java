@@ -30,19 +30,19 @@ public final class CreateAuctionGui extends CreateFlowGui {
         boolean auction = s != null && s.type() == ListingType.AUCTION;
 
         Map<String, String> placeholders = Map.of(
-                "price", s != null && s.hasPrice() ? manager.vault().format(s.price()) : "Not set",
+                "price", s != null && s.hasPrice() ? manager.vault().format(s.price()) : manager.t("not-set"),
                 "duration", durationLabel(s == null ? manager.config().defaultDurationHours() : s.durationHours()),
                 "type_material", auction ? "GOLD_NUGGET" : "EMERALD",
-                "type_name", auction ? "&dAuction" : "&bBuy It Now",
-                "type_desc", auction ? "&7Players bid; highest wins at the end" : "&7Sold instantly at a fixed price",
-                "toggle_hint", auction ? "&7Click to switch to &bBuy It Now" : "&7Click to switch to &dAuction");
+                "type_name", manager.t(auction ? "type.auction" : "type.bin"),
+                "type_desc", manager.t(auction ? "type.auction-desc" : "type.bin-desc"),
+                "toggle_hint", manager.t("type-toggle", "type", manager.t(auction ? "type.bin" : "type.auction")));
         template.applyStatic(inventory, placeholders);
 
         // Show the deposited item in the configured "item" slot when present.
         int itemSlot = template.slotOf("item");
         if (itemSlot >= 0 && s != null && s.hasItem()) {
             ItemStack shown = GuiUtil.appendLore(s.item(),
-                    List.of("", "&7Click to remove and return it to your inventory"));
+                    List.of("", manager.t("click-remove-item")));
             inventory.setItem(itemSlot, MenuTemplate.tag(shown, MenuAction.REMOVE_ITEM));
         }
     }

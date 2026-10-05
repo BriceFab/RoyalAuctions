@@ -40,7 +40,7 @@ public final class DurationGui extends CreateFlowGui {
             boolean isSelected = option.hours() == selected;
             inventory.setItem(slot, GuiUtil.button(option.icon(),
                     (isSelected ? "&a" : "&e") + option.label(),
-                    isSelected ? "&aCurrently selected" : "&7Click to select"));
+                    manager.t(isSelected ? "currently-selected" : "click-select")));
             slotToHours.put(slot, option.hours());
         }
     }

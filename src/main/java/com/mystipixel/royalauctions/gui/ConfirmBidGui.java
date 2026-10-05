@@ -57,13 +57,13 @@ public final class ConfirmBidGui extends AuctionGui {
         if (itemSlot >= 0) {
             List<String> lore = new ArrayList<>();
             lore.add("");
-            lore.add("&7Seller: &f" + listing.sellerName());
+            lore.add(manager.t("seller", "seller", listing.sellerName()));
             lore.add(listing.hasBids()
-                    ? "&7Current bid: &a" + manager.vault().format(listing.currentBid())
-                    : "&7Starting bid: &a" + manager.vault().format(listing.price()));
-            lore.add("&7Your bid: &e" + manager.vault().format(amount));
+                    ? manager.t("current-bid", "price", manager.vault().format(listing.currentBid()))
+                    : manager.t("starting-bid", "price", manager.vault().format(listing.price())));
+            lore.add(manager.t("your-bid", "price", manager.vault().format(amount)));
             lore.add("");
-            lore.add("&7Ends in: &f" + GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
+            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));
         }
     }

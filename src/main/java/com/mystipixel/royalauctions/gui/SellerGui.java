@@ -68,24 +68,24 @@ public final class SellerGui extends AuctionGui {
 
             List<String> lore = new ArrayList<>();
             lore.add("");
-            lore.add("&7Seller: &f" + listing.sellerName());
+            lore.add(manager.t("seller", "seller", listing.sellerName()));
             if (listing.isAuction()) {
-                lore.add("&7Type: &dAuction");
-                lore.add("&6" + (listing.hasBids() ? "Current bid" : "Starting bid") + ": &e"
-                        + manager.vault().format(listing.displayPrice()) + " coins");
-                lore.add("&7Bids: &f" + listing.bidCount());
-                lore.add("&7Top bidder: &f"
-                        + (listing.topBidderName() == null ? "None" : listing.topBidderName()));
+                lore.add(manager.t("type-line", "type", manager.t("type.auction")));
+                lore.add(manager.t("bid-price-line", "label", manager.t(listing.hasBids() ? "label.current-bid" : "label.starting-bid"),
+                        "price", manager.vault().format(listing.displayPrice())));
+                lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
+                lore.add(manager.t("top-bidder", "bidder",
+                        listing.topBidderName() == null ? manager.t("none") : listing.topBidderName()));
             } else {
-                lore.add("&7Type: &bBuy It Now");
-                lore.add("&6Buy it now: &e" + manager.vault().format(listing.price()) + " coins");
+                lore.add(manager.t("type-line", "type", manager.t("type.bin")));
+                lore.add(manager.t("bin-price-line", "price", manager.vault().format(listing.price())));
             }
             lore.add("");
-            lore.add("&7Ends in: &f" + GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
+            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             lore.add("");
             lore.add(listing.sellerId().equals(player.getUniqueId())
-                    ? "&7This is your own listing."
-                    : (listing.isAuction() ? "&eClick to bid" : "&eClick to buy"));
+                    ? manager.t("own-listing")
+                    : manager.t(listing.isAuction() ? "click-bid" : "click-buy"));
 
             ItemStack icon = GuiUtil.appendLore(listing.item(), lore);
             inventory.setItem(slot, icon);

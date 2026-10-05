@@ -44,8 +44,8 @@ public final class ConfirmPurchaseGui extends AuctionGui {
         if (itemSlot >= 0) {
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), List.of(
                     "",
-                    "&7Price: &a" + manager.vault().format(listing.price()),
-                    "&7Seller: &f" + listing.sellerName())));
+                    manager.t("price", "price", manager.vault().format(listing.price())),
+                    manager.t("seller", "seller", listing.sellerName()))));
         }
     }
 

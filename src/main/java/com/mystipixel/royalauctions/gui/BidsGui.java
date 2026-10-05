@@ -67,17 +67,17 @@ public final class BidsGui extends AuctionGui {
 
             List<String> lore = new ArrayList<>();
             lore.add("");
-            lore.add(winning ? "&a&lTOP BIDDER" : "&c&lOUTBID");
-            lore.add("&7Seller: &f" + listing.sellerName());
-            lore.add("&7Current bid: &a" + manager.vault().format(listing.displayPrice()));
-            lore.add("&7Bids: &f" + listing.bidCount());
+            lore.add(manager.t(winning ? "top-bidder-badge" : "outbid-badge"));
+            lore.add(manager.t("seller", "seller", listing.sellerName()));
+            lore.add(manager.t("current-bid", "price", manager.vault().format(listing.displayPrice())));
+            lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             if (!winning) {
-                lore.add("&7Leader: &f" + (listing.topBidderName() == null ? "-" : listing.topBidderName()));
+                lore.add(manager.t("leader", "bidder", listing.topBidderName() == null ? "-" : listing.topBidderName()));
             }
             lore.add("");
-            lore.add("&7Ends in: &f" + GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
+            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             lore.add("");
-            lore.add(winning ? "&7You're winning this one." : "&eClick to bid again");
+            lore.add(manager.t(winning ? "winning" : "click-bid-again"));
 
             ItemStack icon = GuiUtil.appendLore(listing.item(), lore);
             inventory.setItem(slot, icon);

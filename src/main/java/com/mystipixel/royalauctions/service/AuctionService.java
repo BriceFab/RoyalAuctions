@@ -61,7 +61,8 @@ public final class AuctionService {
     private void logError(String what, Throwable e) { plugin.getLogger().log(Level.SEVERE, "Error " + what, e); }
     private void tell(Player player, String key, String... values) { if (player.isOnline()) messages.send(player, key, values); }
     private void failure(Player player, Exception e) {
-        if (e instanceof AuctionTransactions.Rejected) tell(player, "exchange.rejected", "reason", e.getMessage());
+        if (e instanceof AuctionTransactions.Rejected r) tell(player, "exchange.rejected", "reason",
+                r.key == null ? r.getMessage() : messages.text("exchange.reasons." + r.key, r.values));
         else { logError("reserving an auction operation", e); tell(player, "exchange.unconfirmed"); }
     }
     private void result(Player player, UUID operation, ExternalEffectRunner.Result result) {

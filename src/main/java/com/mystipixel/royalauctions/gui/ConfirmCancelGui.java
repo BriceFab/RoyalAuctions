@@ -45,10 +45,10 @@ public final class ConfirmCancelGui extends AuctionGui {
         if (itemSlot >= 0) {
             List<String> lore = new ArrayList<>();
             lore.add("");
-            lore.add(listing.isAuction() ? "&7Type: &dAuction" : "&7Type: &bBuy It Now");
-            lore.add("&7Price: &a" + manager.vault().format(listing.displayPrice()));
+            lore.add(manager.t("type-line", "type", manager.t(listing.isAuction() ? "type.auction" : "type.bin")));
+            lore.add(manager.t("price", "price", manager.vault().format(listing.displayPrice())));
             lore.add("");
-            lore.add("&7The item is returned to your Collection.");
+            lore.add(manager.t("cancel-returns"));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));
         }
     }

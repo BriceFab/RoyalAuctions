@@ -318,7 +318,7 @@ public final class GuiManager {
 
     public void beginSearch(Player player, String category, SortOrder sort) {
         ticket(player);
-        textInput.request(player, List.of("^^^^^^^^^^^^^^^", "Search by name", "blank = show all"), input -> {
+        textInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.search-1"), t("sign.search-2")), input -> {
             if (input == null || input.isBlank()) {
                 openBrowse(player, category, null, sort, 0);
             } else {
@@ -337,7 +337,7 @@ public final class GuiManager {
         // if the dialog is never answered (quit, another plugin's screen).
         ticket(player);
         s.awaitingPrice(true);
-        textInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter a price", "in numbers"), input -> {
+        textInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.price-1"), t("sign.price-2")), input -> {
             s.awaitingPrice(false);
             if (input != null && !input.isBlank() && !input.equalsIgnoreCase("cancel")) {
                 Double price = parsePositive(input);
@@ -449,6 +449,11 @@ public final class GuiManager {
     /** Translated vanilla item names, so search works in the language players see. */
     public ItemNames itemNames() {
         return itemNames;
+    }
+
+    /** Menu text from {@code messages.yml} ({@code gui.<key>}), placeholders filled in. */
+    public String t(String key, String... kv) {
+        return messages.text("gui." + key, kv);
     }
 
     /**

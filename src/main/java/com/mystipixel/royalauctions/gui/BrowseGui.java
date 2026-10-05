@@ -32,14 +32,15 @@ public final class BrowseGui extends AuctionGui {
 
     /** The listing-type filter states, in list order. */
     private enum TypeFilter {
-        ALL("Show All"),
-        BIN("Buy It Now only"),
-        AUCTION("Auctions only");
+        ALL("filter.all"),
+        BIN("filter.bin"),
+        AUCTION("filter.auction");
 
-        final String display;
+        /** Its label's key under {@code gui.} in messages.yml. */
+        final String key;
 
-        TypeFilter(String display) {
-            this.display = display;
+        TypeFilter(String key) {
+            this.key = key;
         }
 
         /** Step through the list; {@code delta} is +1 (down) or -1 (up), wrapping at both ends. */
@@ -139,14 +140,14 @@ public final class BrowseGui extends AuctionGui {
         int pages = result.pageCount(perPage);
 
         Map<String, String> placeholders = new HashMap<>();
-        placeholders.put("category", category == null ? "All" : displayNameOf(category));
+        placeholders.put("category", category == null ? manager.t("all") : displayNameOf(category));
         placeholders.put("count", String.valueOf(result.total()));
         placeholders.put("page", String.valueOf(page + 1));
         placeholders.put("pages", String.valueOf(pages));
-        placeholders.put("search", search == null ? "None" : search);
+        placeholders.put("search", search == null ? manager.t("none") : search);
         placeholders.put("sort", prettySort());
-        placeholders.put("tier", tier == null ? "&fNo Filter" : manager.tiers().displayOf(tier));
-        placeholders.put("type", typeFilter.display);
+        placeholders.put("tier", tier == null ? "&f" + manager.t("no-filter") : manager.tiers().displayOf(tier));
+        placeholders.put("type", manager.t(typeFilter.key));
 
         // Filter buttons print their whole option list, current selection marked.
         Map<String, List<String>> lists = new HashMap<>();
@@ -174,12 +175,12 @@ public final class BrowseGui extends AuctionGui {
         ph.put("price", GuiUtil.comma(listing.displayPrice()));
         ph.put("starting_price", GuiUtil.comma(listing.price()));
         ph.put("bids", String.valueOf(listing.bidCount()));
-        ph.put("top_bidder", listing.topBidderName() == null ? "None" : listing.topBidderName());
+        ph.put("top_bidder", listing.topBidderName() == null ? manager.t("none") : listing.topBidderName());
         ph.put("ends_in", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
-        ph.put("bid_label", listing.hasBids() ? "Current bid" : "Starting bid");
-        ph.put("tier", listing.tier() == null ? "&7None" : manager.tiers().displayOf(listing.tier()));
-        ph.put("click_hint", own ? "&cThis is your own listing"
-                : (listing.isAuction() ? "&eClick to bid!" : "&eClick to purchase!"));
+        ph.put("bid_label", manager.t(listing.hasBids() ? "label.current-bid" : "label.starting-bid"));
+        ph.put("tier", listing.tier() == null ? "&7" + manager.t("none") : manager.tiers().displayOf(listing.tier()));
+        ph.put("click_hint", manager.t(own ? "own-listing-browse"
+                : (listing.isAuction() ? "click-bid-browse" : "click-purchase")));
 
         String path = listing.isAuction() ? "listing-lore.auction" : "listing-lore.buy-it-now";
         List<String> lines = template.lore(path, ph);
@@ -193,16 +194,16 @@ public final class BrowseGui extends AuctionGui {
     private List<String> defaultListingLore(Listing listing, Map<String, String> ph) {
         List<String> lore = new ArrayList<>();
         lore.add("");
-        lore.add("&7Seller: &f" + ph.get("seller"));
+        lore.add(manager.t("seller", "seller", ph.get("seller")));
         if (listing.isAuction()) {
-            lore.add("&6" + ph.get("bid_label") + ": &e" + ph.get("price") + " coins");
-            lore.add("&7Top bidder: &f" + ph.get("top_bidder"));
-            lore.add("&7Bids: &f" + ph.get("bids"));
+            lore.add(manager.t("bid-price-line", "label", ph.get("bid_label"), "price", ph.get("price")));
+            lore.add(manager.t("top-bidder", "bidder", ph.get("top_bidder")));
+            lore.add(manager.t("bids", "bids", ph.get("bids")));
         } else {
-            lore.add("&6Buy it now: &e" + ph.get("price") + " coins");
+            lore.add(manager.t("bin-price-line", "price", ph.get("price")));
         }
         lore.add("");
-        lore.add("&7Ends in: &f" + ph.get("ends_in"));
+        lore.add(manager.t("ends-in", "time", ph.get("ends_in")));
         lore.add("");
         lore.add(ph.get("click_hint"));
         return lore;
@@ -215,7 +216,7 @@ public final class BrowseGui extends AuctionGui {
             int slot = catSlots.get(i);
             boolean selected = cat.id().equalsIgnoreCase(category);
             ItemStack tab = GuiUtil.button(cat.icon(), cat.displayName(),
-                    selected ? "&aCurrently viewing" : "&7Click to view");
+                    manager.t(selected ? "currently-viewing" : "click-view"));
             if (selected) {
                 ItemMeta meta = tab.getItemMeta();
                 if (meta != null) {
@@ -261,11 +262,11 @@ public final class BrowseGui extends AuctionGui {
         List<Tier> tiers = manager.tiers().tiers();
         List<String> out = new ArrayList<>();
         if (tiers.isEmpty()) {
-            out.add("&8No tiers configured");
+            out.add(manager.t("no-tiers"));
             return out;
         }
         int current = tierIndex(tiers);
-        out.add(marked(current == 0, "&fNo Filter"));
+        out.add(marked(current == 0, "&f" + manager.t("no-filter")));
         for (int i = 0; i < tiers.size(); i++) {
             out.add(marked(current == i + 1, tiers.get(i).displayName()));
         }
@@ -276,7 +277,7 @@ public final class BrowseGui extends AuctionGui {
     private List<String> typeList() {
         List<String> out = new ArrayList<>();
         for (TypeFilter f : TypeFilter.values()) {
-            out.add(marked(f == typeFilter, "&f" + f.display));
+            out.add(marked(f == typeFilter, "&f" + manager.t(f.key)));
         }
         return out;
     }
@@ -292,11 +293,11 @@ public final class BrowseGui extends AuctionGui {
 
     private String prettySort() {
         return switch (sort) {
-            case NEWEST -> "Newest";
-            case OLDEST -> "Oldest";
-            case PRICE_LOW -> "Price ↑";
-            case PRICE_HIGH -> "Price ↓";
-            case ENDING_SOON -> "Ending Soon";
+            case NEWEST -> manager.t("sort.newest");
+            case OLDEST -> manager.t("sort.oldest");
+            case PRICE_LOW -> manager.t("sort.price-low");
+            case PRICE_HIGH -> manager.t("sort.price-high");
+            case ENDING_SOON -> manager.t("sort.ending-soon");
         };
     }
 
