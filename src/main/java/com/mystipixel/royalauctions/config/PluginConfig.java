@@ -38,6 +38,7 @@ public final class PluginConfig {
     private double feePercent;
     private double feeMinimum;
     private boolean instantDeliver;
+    private boolean manualEarnings;
 
     private final List<DurationOption> durations = new ArrayList<>();
     private int defaultDurationHours;
@@ -81,6 +82,7 @@ public final class PluginConfig {
         this.minPrice = listings.getDouble("min-price", 1.0);
         this.maxPrice = listings.getDouble("max-price", -1);
         this.instantDeliver = listings.getBoolean("instant-deliver-purchases", true);
+        this.manualEarnings = listings.getBoolean("manual-earnings-collection", false);
         ConfigurationSection fee = section(listings, "fee");
         this.feePercent = fee.getDouble("percent", 0.02);
         this.feeMinimum = fee.getDouble("minimum", 5.0);
@@ -348,6 +350,11 @@ public final class PluginConfig {
 
     public boolean hasMaxPrice() {
         return maxPrice > 0;
+    }
+
+    /** Sale money waits in the Collection menu until the seller collects it, instead of being paid at once. */
+    public boolean manualEarnings() {
+        return manualEarnings;
     }
 
     public boolean instantDeliver() {

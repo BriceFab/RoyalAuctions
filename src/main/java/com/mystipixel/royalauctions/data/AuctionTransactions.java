@@ -347,14 +347,27 @@ public final class AuctionTransactions {
             List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;
         }
     }
+    /** Sale payouts still waiting for {@code seller} to collect them. */
+    public List<Operation> unclaimedEarnings(UUID seller) throws SQLException {
+        try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
+                "SELECT * FROM ra_operations WHERE state='READY' AND kind='PAYOUT' AND note='SOLD' AND player_id=? "
+                        + "ORDER BY created_at,id", seller); ResultSet rs = ps.executeQuery()) {
+            List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;
+        }
+    }
     public int heldCount() throws SQLException {
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
                 "SELECT COUNT(*) FROM ra_operations WHERE state='APPLYING' AND updated_at<?", System.currentTimeMillis() - 120_000);
              ResultSet rs = ps.executeQuery()) { rs.next(); return rs.getInt(1); }
     }
     public List<Operation> recoverable(int limit) throws SQLException {
+        return recoverable(limit, false);
+    }
+    /** {@code holdSales}: leave READY sale payouts for their seller to collect (see {@link #unclaimedEarnings}). */
+    public List<Operation> recoverable(int limit, boolean holdSales) throws SQLException {
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
-                "SELECT * FROM ra_operations WHERE state IN ('APPLIED','FAILED') OR (state='READY' AND updated_at<?) "
+                "SELECT * FROM ra_operations WHERE state IN ('APPLIED','FAILED') OR (state='READY' AND updated_at<?"
+                        + (holdSales ? " AND NOT (kind='PAYOUT' AND note='SOLD')" : "") + ") "
                         + "OR (state='PREPARED' AND updated_at<?) ORDER BY updated_at,id LIMIT ?",
                 System.currentTimeMillis() - 60_000, System.currentTimeMillis() - 120_000, limit); ResultSet rs = ps.executeQuery()) {
             List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;

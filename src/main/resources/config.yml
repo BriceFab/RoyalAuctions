@@ -81,6 +81,12 @@ listings:
   # If false, all purchases go to the collection to be claimed manually.
   instant-deliver-purchases: true
 
+  # If true, money from a sale is not paid to the seller right away: it waits
+  # in the Collection menu (Earnings button) until they collect it. Useful when
+  # money should only reach a balance on purpose, e.g. with a bounty plugin.
+  # Bid refunds are still paid at once. Turning this off pays out what waits.
+  manual-earnings-collection: false
+
 # ---------------------------------------------------------------------
 # Bidding (AUCTION listings)
 # ---------------------------------------------------------------------

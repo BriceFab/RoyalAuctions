@@ -19,13 +19,16 @@ public final class CollectionGui extends AuctionGui {
     private final MenuTemplate template;
     private final Player player;
     private final List<CollectionItem> items;
+    /** Sale money waiting to be collected (manual-earnings-collection), shown on the earnings button. */
+    private final double earnings;
     private final Map<Integer, CollectionItem> slotToItem = new HashMap<>();
     private int page;
     /** One claim at a time; the menu reopens with fresh contents when it completes. */
     private boolean claiming;
 
-    public CollectionGui(GuiManager manager, Player player, List<CollectionItem> items) {
+    public CollectionGui(GuiManager manager, Player player, List<CollectionItem> items, double earnings) {
         this.manager = manager;
+        this.earnings = earnings;
         this.template = manager.menus().collection();
         this.player = player;
         this.items = items;
@@ -51,7 +54,12 @@ public final class CollectionGui extends AuctionGui {
         template.applyStatic(inventory, Map.of(
                 "count", String.valueOf(items.size()),
                 "page", String.valueOf(page + 1),
-                "pages", String.valueOf(pages)));
+                "pages", String.valueOf(pages),
+                "earnings", manager.vault().format(earnings)));
+        int earningsSlot = template.slotOf("earnings");
+        if (earningsSlot >= 0 && !manager.config().manualEarnings()) {
+            inventory.setItem(earningsSlot, template.maskAt(earningsSlot));
+        }
 
         int from = page * perPage;
         for (int i = 0; i < perPage && from + i < items.size(); i++) {
@@ -97,6 +105,12 @@ public final class CollectionGui extends AuctionGui {
             case NEXT_PAGE -> {
                 page++;
                 render();
+            }
+            case CLAIM_EARNINGS -> {
+                if (!claiming && manager.config().manualEarnings()) {
+                    claiming = true;
+                    manager.service().claimEarnings(player, () -> manager.openCollection(player, page));
+                }
             }
             case OPEN_HUB -> manager.openHub(player);
             case OPEN_BROWSE -> manager.openBrowse(player);

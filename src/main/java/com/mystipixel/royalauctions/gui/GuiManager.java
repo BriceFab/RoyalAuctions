@@ -1,6 +1,7 @@
 package com.mystipixel.royalauctions.gui;
 
 import com.mystipixel.royalauctions.util.ItemNames;
+import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
 import com.mystipixel.royalauctions.data.Listing;
@@ -191,11 +192,21 @@ public final class GuiManager {
         int ticket = ticket(player);
         service.loadCollection(player.getUniqueId(), items -> {
             if (!current(player, ticket)) return;
-            CollectionGui gui = new CollectionGui(this, player, items);
-            gui.populate(page);
-            player.openInventory(gui.getInventory());
-            playOpen(player, "collection");
+            if (!config.manualEarnings()) {
+                showCollection(player, items, 0, page);
+                return;
+            }
+            service.loadEarnings(player.getUniqueId(), earnings -> {
+                if (current(player, ticket)) showCollection(player, items, earnings, page);
+            });
         });
+    }
+
+    private void showCollection(Player player, List<CollectionItem> items, double earnings, int page) {
+        CollectionGui gui = new CollectionGui(this, player, items, earnings);
+        gui.populate(page);
+        player.openInventory(gui.getInventory());
+        playOpen(player, "collection");
     }
 
     public void openListings(Player player) {
@@ -354,7 +365,7 @@ public final class GuiManager {
 
     public void beginBidInput(Player player, Listing listing, String category, String search, SortOrder sort, int page) {
         ticket(player);
-        textInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter your bid", "amount"), input -> {
+        textInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.bid-1"), t("sign.bid-2")), input -> {
             if (input == null || input.isBlank() || input.equalsIgnoreCase("cancel")) {
                 openBrowse(player, category, search, sort, page);
                 return;

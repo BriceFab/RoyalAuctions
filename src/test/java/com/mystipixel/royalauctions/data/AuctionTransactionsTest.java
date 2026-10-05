@@ -229,6 +229,25 @@ class AuctionTransactionsTest {
         assertEquals(0, count("ra_operation_locks"));
     }
 
+    @Test void heldSaleEarningsWaitForTheSellerAndPayOnce() throws Exception {
+        var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
+        var payout = tx.pending(50).getFirst();
+        assertEquals(1, tx.recoverable(50).size(), "Paid automatically by default");
+        assertTrue(tx.recoverable(50, true).isEmpty(), "Held for the seller to collect");
+        assertEquals(java.util.List.of(payout.id()), tx.unclaimedEarnings(seller).stream().map(AuctionTransactions.Operation::id).toList());
+        assertTrue(tx.unclaimedEarnings(alice).isEmpty());
+        complete(payout, true);
+        assertFalse(tx.begin(payout.id(), worker), "A second collect cannot pay again");
+        assertTrue(tx.unclaimedEarnings(seller).isEmpty());
+    }
+
+    @Test void bidRefundsAreNotHeld() throws Exception {
+        var l = seed(ListingType.AUCTION);
+        complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);
+        assertEquals(1, tx.recoverable(50, true).size());
+        assertTrue(tx.unclaimedEarnings(alice).isEmpty());
+    }
+
     @Test void explicitPayoutFailureRemainsOwedAndRetryIsNotDuplicated() throws Exception {
         var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
         var payout = tx.pending(50).getFirst(); complete(payout, false);

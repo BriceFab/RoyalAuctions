@@ -39,6 +39,8 @@ collection:
   empty: "{prefix}&7Your collection is empty."
   full-inventory: "{prefix}&cYour inventory is full — make room first."
   claimed: "{prefix}&aClaimed &f{item}&a."
+  earnings-claimed: "{prefix}&aCollected &f{amount} &afrom the sale of &f{item}&a."
+  no-earnings: "{prefix}&7You have no sale earnings to collect."
 
 expiry:
   expired-notify: "{prefix}&e{count} &7of your listings expired and were returned to &f/ah collect&7."
@@ -179,6 +181,8 @@ gui:
     search-2: "blank = show all"
     price-1: "Enter a price"
     price-2: "in numbers"
+    bid-1: "Enter your bid"
+    bid-2: "amount"
 
 # Buttons of the text-input dialog (search, prices, custom bids).
 input:

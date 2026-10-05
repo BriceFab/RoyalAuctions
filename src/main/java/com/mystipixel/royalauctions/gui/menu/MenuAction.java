@@ -48,7 +48,9 @@ public enum MenuAction {
     BID_CUSTOM,
     // Confirmation gates for the irreversible actions
     CONFIRM_BID,
-    CONFIRM_CANCEL;
+    CONFIRM_CANCEL,
+    // Collection
+    CLAIM_EARNINGS;
 
     /** Effect id (as authored in the menu YAML) → action. */
     private static final Map<String, MenuAction> BY_EFFECT_ID = Map.ofEntries(
@@ -80,6 +82,7 @@ public enum MenuAction {
             Map.entry("ah_bid_custom", BID_CUSTOM),
             Map.entry("ah_confirm_bid", CONFIRM_BID),
             Map.entry("ah_confirm_cancel", CONFIRM_CANCEL),
+            Map.entry("ah_claim_earnings", CLAIM_EARNINGS),
             Map.entry("close_inventory", CLOSE));
 
     /** Resolve an effect id from a menu config; unknown ids are inert rather than fatal. */
