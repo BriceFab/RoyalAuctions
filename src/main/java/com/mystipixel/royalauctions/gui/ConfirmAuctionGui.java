@@ -33,7 +33,7 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
         double fee = manager.config().feeFor(s.price());
 
         template.applyStatic(inventory, Map.of(
-                "type", auction ? "Auction" : "Buy It Now",
+                "type", manager.t(auction ? "type.auction-plain" : "type.bin-plain"),
                 "price", manager.vault().format(s.price()),
                 "duration", s.durationHours() + "h",
                 "fee", manager.vault().format(fee)));
@@ -42,11 +42,10 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
         if (itemSlot >= 0) {
             List<String> lore = new ArrayList<>();
             lore.add("");
-            lore.add("&7Type: " + (auction ? "&dAuction" : "&bBuy It Now"));
-            lore.add(auction ? "&7Starting bid: &a" + manager.vault().format(s.price())
-                    : "&7Price: &a" + manager.vault().format(s.price()));
-            lore.add("&7Duration: &f" + s.durationHours() + "h");
-            lore.add("&7Listing fee: &c" + manager.vault().format(fee));
+            lore.add(manager.t("type-line", "type", manager.t(auction ? "type.auction" : "type.bin")));
+            lore.add(manager.t(auction ? "starting-bid" : "price", "price", manager.vault().format(s.price())));
+            lore.add(manager.t("duration", "hours", String.valueOf(s.durationHours())));
+            lore.add(manager.t("listing-fee", "fee", manager.vault().format(fee)));
             inventory.setItem(itemSlot, GuiUtil.appendLore(s.item(), lore));
         }
     }

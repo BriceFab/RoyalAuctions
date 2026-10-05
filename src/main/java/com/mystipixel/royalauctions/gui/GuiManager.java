@@ -316,7 +316,7 @@ public final class GuiManager {
 
     public void beginSearch(Player player, String category, SortOrder sort) {
         ticket(player);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Search by name", "blank = show all"), input -> {
+        signInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.search-1"), t("sign.search-2")), input -> {
             if (input == null || input.isBlank()) {
                 openBrowse(player, category, null, sort, 0);
             } else {
@@ -334,7 +334,7 @@ public final class GuiManager {
         // always answers (null on timeout), which clears this again.
         ticket(player);
         s.awaitingPrice(true);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter a price", "in numbers"), input -> {
+        signInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.price-1"), t("sign.price-2")), input -> {
             s.awaitingPrice(false);
             if (input != null && !input.isBlank() && !input.equalsIgnoreCase("cancel")) {
                 Double price = parsePositive(input);
@@ -441,6 +441,11 @@ public final class GuiManager {
 
     public VaultHook vault() {
         return vault;
+    }
+
+    /** Menu text from {@code messages.yml} ({@code gui.<key>}), placeholders filled in. */
+    public String t(String key, String... kv) {
+        return messages.text("gui." + key, kv);
     }
 
     /**

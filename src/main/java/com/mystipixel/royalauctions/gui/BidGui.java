@@ -48,16 +48,16 @@ public final class BidGui extends AuctionGui {
             long remaining = listing.expiresAt() - System.currentTimeMillis();
             List<String> lore = new ArrayList<>();
             lore.add("");
-            lore.add("&7Seller: &f" + listing.sellerName());
+            lore.add(manager.t("seller", "seller", listing.sellerName()));
             if (listing.hasBids()) {
-                lore.add("&7Current bid: &a" + manager.vault().format(listing.currentBid()));
-                lore.add("&7Top bidder: &f" + listing.topBidderName());
-                lore.add("&7Bids: &f" + listing.bidCount());
+                lore.add(manager.t("current-bid", "price", manager.vault().format(listing.currentBid())));
+                lore.add(manager.t("top-bidder", "bidder", listing.topBidderName()));
+                lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             } else {
-                lore.add("&7Starting bid: &a" + manager.vault().format(listing.price()));
-                lore.add("&7No bids yet");
+                lore.add(manager.t("starting-bid", "price", manager.vault().format(listing.price())));
+                lore.add(manager.t("no-bids"));
             }
-            lore.add("&7Ends in: &f" + GuiUtil.timeLeft(remaining));
+            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(remaining)));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));
         }
     }
