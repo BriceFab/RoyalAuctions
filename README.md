@@ -162,6 +162,15 @@ whole list rather than just the current value:
 
 ---
 
+### Searching in other languages
+
+The server only knows English item names, so a search for what a French player sees (`casque`)
+finds nothing. To fix that, copy Minecraft language files into `plugins/RoyalAuctions/lang/` and run
+`/ah reload`. For `fr_fr.json`: in a client's `.minecraft/assets/indexes/<version>.json`, look up
+`minecraft/lang/fr_fr.json` and copy the file under `assets/objects/` that its hash names. A search
+then also finds vanilla items whose name in any loaded language contains the text, ignoring case and
+accents. Items with a custom name are matched on that name, as before.
+
 ## Categories
 
 One file per category in `categories/`. **The file name is the category id**, so

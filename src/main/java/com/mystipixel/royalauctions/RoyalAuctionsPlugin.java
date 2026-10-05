@@ -129,6 +129,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         this.menus = new MenuManager(this);
         this.textInput = new TextInput(this, () -> messages.text("input.confirm"), () -> messages.text("input.cancel"));
         this.guiManager = new GuiManager(this, service, config, categories, tiers, messages, vault, menus, textInput);
+        guiManager.itemNames().reload(new java.io.File(getDataFolder(), "lang"), getLogger());
 
         getServer().getPluginManager().registerEvents(new AuctionGuiListener(guiManager), this);
         var notifier = new com.mystipixel.royalauctions.service.OfflineEventNotifier(this, database, messages, vault, workers);
@@ -285,6 +286,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             return; // /ah is not registered until then, but keep this safe to call regardless
         }
         menus.reload();
+        guiManager.itemNames().reload(new java.io.File(getDataFolder(), "lang"), getLogger());
         scheduleExpiryTask();
         schedulePruneTask();
         categories.auditCustomItems();

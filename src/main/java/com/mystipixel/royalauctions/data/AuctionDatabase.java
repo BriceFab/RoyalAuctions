@@ -347,8 +347,15 @@ public final class AuctionDatabase {
             params.add(query.type().name());
         }
         if (query.search() != null) {
-            where.append(" AND LOWER(display_name) LIKE ? ESCAPE '!'");
+            where.append(" AND (LOWER(display_name) LIKE ? ESCAPE '!'");
             params.add("%" + escapeLike(query.search().toLowerCase(Locale.ROOT)) + "%");
+            if (!query.searchNames().isEmpty()) {
+                where.append(" OR LOWER(display_name) IN (")
+                        .append(String.join(",", java.util.Collections.nCopies(query.searchNames().size(), "?")))
+                        .append(")");
+                params.addAll(query.searchNames());
+            }
+            where.append(")");
         }
         return where.toString();
     }
