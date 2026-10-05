@@ -102,6 +102,26 @@ class SchemaMigrationTest {
         }
     }
 
+    @Test void searchTextIsNeverSqlOrAWildcard() throws Exception {
+        var db = open();
+        try {
+            var l = new Listing(UUID.randomUUID(), UUID.randomUUID(), "Seller", new byte[]{1, 2, 3}, "Diamond helmet", "Armor",
+                    null, ListingType.BIN, 10, System.currentTimeMillis(), System.currentTimeMillis() + 600_000,
+                    ListingStatus.ACTIVE, 0, null, null, 0);
+            try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
+            for (String hostile : java.util.List.of("' OR '1'='1", "') OR 1=1 --", "x'; DROP TABLE ra_listings; --",
+                    "%", "_", "!", "%%", "helm%", "\\")) {
+                assertEquals(0, db.browse(new ListingQuery(null, null, null, hostile, SortOrder.NEWEST), 0, 10).total(), hostile);
+                assertEquals(0, db.browse(new ListingQuery(null, null, null, "casque", SortOrder.NEWEST,
+                        Set.of(hostile)), 0, 10).total(), hostile);
+            }
+            assertEquals(1, db.browse(new ListingQuery(null, null, null, "helm", SortOrder.NEWEST), 0, 10).total(),
+                    "Table intact after the payloads");
+        } finally {
+            db.close();
+        }
+    }
+
     @Test void onlyKeyClashesCountAsDuplicates() {
         assertTrue(AuctionTransactions.duplicate(new SQLException(
                 "[SQLITE_CONSTRAINT_PRIMARYKEY] A PRIMARY KEY constraint failed (UNIQUE constraint failed: ra_operation_locks.resource)", null, 19)));
