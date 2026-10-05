@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
+import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
 import com.mystipixel.royalauctions.data.Listing;
@@ -189,11 +190,21 @@ public final class GuiManager {
         int ticket = ticket(player);
         service.loadCollection(player.getUniqueId(), items -> {
             if (!current(player, ticket)) return;
-            CollectionGui gui = new CollectionGui(this, player, items);
-            gui.populate(page);
-            player.openInventory(gui.getInventory());
-            playOpen(player, "collection");
+            if (!config.manualEarnings()) {
+                showCollection(player, items, 0, page);
+                return;
+            }
+            service.loadEarnings(player.getUniqueId(), earnings -> {
+                if (current(player, ticket)) showCollection(player, items, earnings, page);
+            });
         });
+    }
+
+    private void showCollection(Player player, List<CollectionItem> items, double earnings, int page) {
+        CollectionGui gui = new CollectionGui(this, player, items, earnings);
+        gui.populate(page);
+        player.openInventory(gui.getInventory());
+        playOpen(player, "collection");
     }
 
     public void openListings(Player player) {

@@ -383,7 +383,7 @@ public final class AuctionService {
                 int held = transactions.heldCount();
                 if (held > 0) plugin.getLogger().warning(held + " auction exchange(s) need review. Use /ah recovery; uncertain external effects are held, never automatically repeated.");
             }
-            for (var o : transactions.recoverable(50)) {
+            for (var o : transactions.recoverable(50, config.manualEarnings())) {
                 try {
                     switch (o.state()) {
                         case APPLIED, FAILED -> {
@@ -391,19 +391,7 @@ public final class AuctionService {
                             if (o.kind() == AuctionTransactions.Kind.PAYOUT) eventReady.accept(o.player());
                         }
                         case PREPARED -> transactions.abandon(o.id());
-                        case READY -> {
-                            var context = transactions.paymentContext(o.listing());
-                            effects.execute(o.id(), () -> vault.deposit(Bukkit.getOfflinePlayer(o.player()), o.amount()), outcome -> {
-                                if (outcome == ExternalEffectRunner.Result.COMPLETED) {
-                                    eventReady.accept(o.player());
-                                    boolean refund = "OUTBID".equals(o.note());
-                                    UUID counterparty = refund ? null : context.buyer();
-                                    String counterpartyName = counterparty == null ? null : Bukkit.getOfflinePlayer(counterparty).getName();
-                                    econGuard.report(o.player(), o.playerName(), refund ? "bid-refund" : context.auction() ? "auction-sale" : "sale",
-                                            o.amount(), true, counterparty, counterpartyName, context.itemName());
-                                }
-                            });
-                        }
+                        case READY -> pay(o, transactions.paymentContext(o.listing()), outcome -> { });
                         default -> { }
                     }
                 } catch (Exception e) { logError("recovering operation " + o.id(), e); }
@@ -411,6 +399,60 @@ public final class AuctionService {
         } catch (Exception e) { logError("reading recovery journal", e); }
         finally { recovering.set(false); }
     }
+    /** Deposit a READY payout through the journal, so it moves money at most once. */
+    private void pay(AuctionTransactions.Operation o, AuctionTransactions.PaymentContext context,
+                     Consumer<ExternalEffectRunner.Result> then) {
+        effects.execute(o.id(), () -> vault.deposit(Bukkit.getOfflinePlayer(o.player()), o.amount()), outcome -> {
+            if (outcome == ExternalEffectRunner.Result.COMPLETED) {
+                eventReady.accept(o.player());
+                boolean refund = "OUTBID".equals(o.note());
+                UUID counterparty = refund ? null : context.buyer();
+                String counterpartyName = counterparty == null ? null : Bukkit.getOfflinePlayer(counterparty).getName();
+                econGuard.report(o.player(), o.playerName(), refund ? "bid-refund" : context.auction() ? "auction-sale" : "sale",
+                        o.amount(), true, counterparty, counterpartyName, context.itemName());
+            }
+            then.accept(outcome);
+        });
+    }
+
+    /** Total sale money waiting for {@code seller} to collect (manual-earnings-collection). */
+    public void loadEarnings(UUID seller, Consumer<Double> callback) {
+        async(() -> {
+            try {
+                double total = transactions.unclaimedEarnings(seller).stream()
+                        .mapToDouble(AuctionTransactions.Operation::amount).sum();
+                sync(() -> callback.accept(total));
+            } catch (Exception e) {
+                logError("loading earnings", e);
+                sync(() -> callback.accept(0.0));
+            }
+        });
+    }
+
+    /** Pay out every sale waiting for this player; {@code onDone} runs once all have finished. */
+    public void claimEarnings(Player player, Runnable onDone) {
+        UUID seller = player.getUniqueId();
+        async(() -> {
+            try {
+                var earnings = transactions.unclaimedEarnings(seller);
+                if (earnings.isEmpty()) {
+                    sync(() -> { tell(player, "collection.no-earnings"); if (player.isOnline()) onDone.run(); });
+                    return;
+                }
+                var remaining = new java.util.concurrent.atomic.AtomicInteger(earnings.size());
+                for (var o : earnings) {
+                    var context = transactions.paymentContext(o.listing());
+                    sync(() -> pay(o, context, outcome -> {
+                        if (outcome == ExternalEffectRunner.Result.COMPLETED)
+                            tell(player, "collection.earnings-claimed", "amount", vault.format(o.amount()), "item", context.itemName());
+                        else result(player, o.id(), outcome);
+                        if (remaining.decrementAndGet() == 0 && player.isOnline()) onDone.run();
+                    }));
+                }
+            } catch (Exception e) { sync(() -> { failure(player, e); if (player.isOnline()) onDone.run(); }); }
+        });
+    }
+
     public void recoveryCommand(org.bukkit.command.CommandSender sender, String[] args) {
         // Resolve only from console, with an explicit decision and confirmation. The store also
         // refuses operations whose originating process is still heartbeating.

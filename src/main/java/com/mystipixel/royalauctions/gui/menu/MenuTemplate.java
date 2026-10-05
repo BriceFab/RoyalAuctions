@@ -243,6 +243,11 @@ public final class MenuTemplate {
         }
     }
 
+    /** The mask's filler at {@code index}, or null; used to blank out a slot that does not apply. */
+    public ItemStack maskAt(int index) {
+        return index < 0 || index >= mask.length || mask[index] == null ? null : mask[index].clone();
+    }
+
     /** 0-based index of a named slot (its {@code id:} in the config), or -1. */
     public int slotOf(String id) {
         ConfiguredSlot slot = slots.get(id);

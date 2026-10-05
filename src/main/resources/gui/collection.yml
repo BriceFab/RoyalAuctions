@@ -1,5 +1,5 @@
 # Collection: purchases (that didn't fit) and expired/cancelled listings waiting to be claimed.
-# Placeholders: %count% %page% %pages%
+# Placeholders: %count% %page% %pages% %earnings%
 
 title: "&8Auction House &7» &fCollection"
 rows: 6
@@ -43,6 +43,18 @@ slots:
     column: 4
     left-click:
       - id: ah_hub
+
+  # Only shown with listings.manual-earnings-collection: true (otherwise the mask fills it).
+  - id: earnings
+    item: gold_ingot name:"&6Earnings"
+    lore:
+      - "&7Unclaimed sales: &6%earnings%"
+      - ""
+      - "&eClick to collect"
+    row: 6
+    column: 3
+    left-click:
+      - id: ah_claim_earnings
 
   - id: info
     item: ender_chest hide_attributes name:"&eCollection"

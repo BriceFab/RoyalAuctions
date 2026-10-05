@@ -315,6 +315,16 @@ you pay nothing for the feature.
 
 ---
 
+## Collecting sale earnings manually
+
+With `listings.manual-earnings-collection: true`, money from a sale is not deposited when the item
+sells. It waits, journaled like any other payout, until the seller clicks **Earnings** in the
+Collection menu, so it only reaches their balance on purpose (useful with bounty plugins). Bid
+refunds are still paid at once, and turning the option off pays out whatever is waiting.
+
+Existing installs keep their `gui/collection.yml`; copy the `earnings` slot from the bundled file to
+get the button (effect `ah_claim_earnings`, placeholder `%earnings%`).
+
 ## Storage
 
 ```yaml
