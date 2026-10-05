@@ -93,7 +93,8 @@ public final class BrowseGui extends AuctionGui {
             case AUCTION -> ListingType.AUCTION;
             case ALL -> null;
         };
-        return new ListingQuery(category, tier, typed, search, sort);
+        return new ListingQuery(category, tier, typed, search, sort,
+                manager.itemNames().listingNamesMatching(search));
     }
 
     /**

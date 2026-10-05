@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
+import com.mystipixel.royalauctions.util.ItemNames;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
 import com.mystipixel.royalauctions.data.Listing;
@@ -30,6 +31,7 @@ public final class GuiManager {
     private final com.mystipixel.royalauctions.tier.TierManager tiers;
     private final MessageManager messages;
     private final VaultHook vault;
+    private final ItemNames itemNames = new ItemNames();
     private final MenuManager menus;
     private final SignInput signInput;
 
@@ -441,6 +443,11 @@ public final class GuiManager {
 
     public VaultHook vault() {
         return vault;
+    }
+
+    /** Translated vanilla item names, so search works in the language players see. */
+    public ItemNames itemNames() {
+        return itemNames;
     }
 
     /**

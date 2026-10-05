@@ -86,6 +86,22 @@ class SchemaMigrationTest {
         }
     }
 
+    @Test void searchAlsoMatchesTranslatedListingNames() throws Exception {
+        var db = open();
+        try {
+            var l = new Listing(UUID.randomUUID(), UUID.randomUUID(), "Seller", new byte[]{1, 2, 3}, "Diamond helmet", "Armor",
+                    null, ListingType.BIN, 10, System.currentTimeMillis(), System.currentTimeMillis() + 600_000,
+                    ListingStatus.ACTIVE, 0, null, null, 0);
+            try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
+            assertEquals(0, db.browse(new ListingQuery(null, null, null, "casque", SortOrder.NEWEST), 0, 10).total());
+            assertEquals(1, db.browse(new ListingQuery(null, null, null, "casque", SortOrder.NEWEST,
+                    Set.of("diamond helmet", "iron helmet")), 0, 10).total());
+            assertEquals(1, db.browse(new ListingQuery(null, null, null, "helm", SortOrder.NEWEST), 0, 10).total());
+        } finally {
+            db.close();
+        }
+    }
+
     @Test void onlyKeyClashesCountAsDuplicates() {
         assertTrue(AuctionTransactions.duplicate(new SQLException(
                 "[SQLITE_CONSTRAINT_PRIMARYKEY] A PRIMARY KEY constraint failed (UNIQUE constraint failed: ra_operation_locks.resource)", null, 19)));
