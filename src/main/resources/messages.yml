@@ -179,3 +179,5 @@ gui:
     search-2: "blank = show all"
     price-1: "Enter a price"
     price-2: "in numbers"
+    bid-1: "Enter your bid"
+    bid-2: "amount"

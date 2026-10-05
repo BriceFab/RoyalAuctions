@@ -351,7 +351,7 @@ public final class GuiManager {
 
     public void beginBidInput(Player player, Listing listing, String category, String search, SortOrder sort, int page) {
         ticket(player);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter your bid", "amount"), input -> {
+        signInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.bid-1"), t("sign.bid-2")), input -> {
             if (input == null || input.isBlank() || input.equalsIgnoreCase("cancel")) {
                 openBrowse(player, category, search, sort, page);
                 return;
