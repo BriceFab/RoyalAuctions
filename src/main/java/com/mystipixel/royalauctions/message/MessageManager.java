@@ -70,6 +70,18 @@ public final class MessageManager {
                 .build());
     }
 
+    /**
+     * Legacy '&' text for menu item names and lore, with {placeholders} filled in. Coloured later by
+     * the menu, so it stays a plain string.
+     */
+    public String text(String path, String... kv) {
+        String value = raw(path).replace("{prefix}", prefix);
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            value = value.replace("{" + kv[i] + "}", kv[i + 1]);
+        }
+        return value;
+    }
+
     public void send(CommandSender to, String path) {
         send(to, path, Map.of());
     }

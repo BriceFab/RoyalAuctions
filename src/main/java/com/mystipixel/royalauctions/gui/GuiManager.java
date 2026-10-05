@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Opens every menu and runs the sign-based text input flows (search / price / bid). */
+/** Opens every menu and runs the dialog text input flows (search / price / bid). */
 public final class GuiManager {
 
     private final JavaPlugin plugin;
@@ -31,7 +31,7 @@ public final class GuiManager {
     private final MessageManager messages;
     private final VaultHook vault;
     private final MenuManager menus;
-    private final SignInput signInput;
+    private final TextInput textInput;
 
     private final Map<UUID, CreateSession> createSessions = new ConcurrentHashMap<>();
     /**
@@ -43,7 +43,7 @@ public final class GuiManager {
 
     public GuiManager(JavaPlugin plugin, AuctionService service, PluginConfig config, CategoryManager categories,
                       com.mystipixel.royalauctions.tier.TierManager tiers, MessageManager messages,
-                      VaultHook vault, MenuManager menus, SignInput signInput) {
+                      VaultHook vault, MenuManager menus, TextInput textInput) {
         this.plugin = plugin;
         this.service = service;
         this.config = config;
@@ -52,7 +52,7 @@ public final class GuiManager {
         this.messages = messages;
         this.vault = vault;
         this.menus = menus;
-        this.signInput = signInput;
+        this.textInput = textInput;
     }
 
     // ------------------------------------------------------------------ hub / bids / seller view
@@ -312,11 +312,11 @@ public final class GuiManager {
         }
     }
 
-    // ------------------------------------------------------------------ sign input: search / price / bid
+    // ------------------------------------------------------------------ text input: search / price / bid
 
     public void beginSearch(Player player, String category, SortOrder sort) {
         ticket(player);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Search by name", "blank = show all"), input -> {
+        textInput.request(player, List.of("^^^^^^^^^^^^^^^", "Search by name", "blank = show all"), input -> {
             if (input == null || input.isBlank()) {
                 openBrowse(player, category, null, sort, 0);
             } else {
@@ -330,11 +330,12 @@ public final class GuiManager {
         if (s == null) {
             return;
         }
-        // Suppress the create screen's return-item-on-close while the sign editor is up. The prompt
-        // always answers (null on timeout), which clears this again.
+        // Suppress the create screen's return-item-on-close while the dialog is up. Done, Cancel and
+        // Escape all answer, which clears this again; the item is already safe in the collection
+        // if the dialog is never answered (quit, another plugin's screen).
         ticket(player);
         s.awaitingPrice(true);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter a price", "in numbers"), input -> {
+        textInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter a price", "in numbers"), input -> {
             s.awaitingPrice(false);
             if (input != null && !input.isBlank() && !input.equalsIgnoreCase("cancel")) {
                 Double price = parsePositive(input);
@@ -351,7 +352,7 @@ public final class GuiManager {
 
     public void beginBidInput(Player player, Listing listing, String category, String search, SortOrder sort, int page) {
         ticket(player);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter your bid", "amount"), input -> {
+        textInput.request(player, List.of("^^^^^^^^^^^^^^^", "Enter your bid", "amount"), input -> {
             if (input == null || input.isBlank() || input.equalsIgnoreCase("cancel")) {
                 openBrowse(player, category, search, sort, page);
                 return;
