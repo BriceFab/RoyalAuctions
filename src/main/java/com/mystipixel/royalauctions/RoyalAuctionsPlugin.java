@@ -6,7 +6,7 @@ import com.mystipixel.royalauctions.config.PluginConfig;
 import com.mystipixel.royalauctions.data.AuctionDatabase;
 import com.mystipixel.royalauctions.gui.AuctionGuiListener;
 import com.mystipixel.royalauctions.gui.GuiManager;
-import com.mystipixel.royalauctions.gui.SignInput;
+import com.mystipixel.royalauctions.gui.TextInput;
 import com.mystipixel.royalauctions.gui.menu.MenuManager;
 import com.mystipixel.royalauctions.hooks.AuctionPlaceholderExpansion;
 import com.mystipixel.royalauctions.hooks.EcoHook;
@@ -46,7 +46,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     private AuctionService service;
     private MenuManager menus;
     private GuiManager guiManager;
-    private SignInput signInput;
+    private TextInput textInput;
     private Workers workers;
 
     private BukkitTask expiryTask;
@@ -127,9 +127,8 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         // Bukkit cancels this main-thread task on disable. No async Vault calls.
         getServer().getScheduler().runTaskTimer(this, service::retryPayments, 600L, 600L);
         this.menus = new MenuManager(this);
-        this.signInput = new SignInput(this);
-        getServer().getPluginManager().registerEvents(signInput, this);
-        this.guiManager = new GuiManager(this, service, config, categories, tiers, messages, vault, menus, signInput);
+        this.textInput = new TextInput(this, () -> messages.text("input.confirm"), () -> messages.text("input.cancel"));
+        this.guiManager = new GuiManager(this, service, config, categories, tiers, messages, vault, menus, textInput);
 
         getServer().getPluginManager().registerEvents(new AuctionGuiListener(guiManager), this);
         var notifier = new com.mystipixel.royalauctions.service.OfflineEventNotifier(this, database, messages, vault, workers);
@@ -228,8 +227,6 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         if (recoveryTask != null) recoveryTask.cancel();
         // Finish (or durably decline) every exchange already under way before storage closes.
         if (workers != null) workers.shutdown(SHUTDOWN_WAIT_MILLIS);
-        // Put back any blocks borrowed for sign prompts that are still open.
-        if (signInput != null) signInput.restoreAll();
         // Create-session items are already durable. Do not duplicate pending listings on shutdown.
         if (guiManager != null) guiManager.clearCreateSessions();
         if (placeholderExpansion != null) {

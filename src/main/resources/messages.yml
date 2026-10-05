@@ -91,3 +91,8 @@ exchange:
   purchased: "{prefix}&aPurchase completed. Your item is saved in &f/ah collect&a."
 
 payment-pending: "{prefix}&eAn auction payment is on hold. Staff can check its status; do not repeat the transaction."
+
+# Buttons of the text-input dialog (search, prices, custom bids).
+input:
+  confirm: "&aDone"
+  cancel: "&cCancel"
