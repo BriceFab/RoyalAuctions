@@ -14,6 +14,7 @@ import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import com.mystipixel.royalauctions.service.AuctionService;
 import com.mystipixel.royalauctions.service.Workers;
+import com.mystipixel.royalauctions.scandicraft.ScandiAuctionBridge;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -48,6 +49,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     private GuiManager guiManager;
     private TextInput textInput;
     private Workers workers;
+    private ScandiAuctionBridge scandiAuctionBridge;
 
     private BukkitTask expiryTask;
     private BukkitTask recoveryTask;
@@ -136,7 +138,10 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(notifier, this);
         service.eventNotifier(notifier::notifyOnline);
 
-        AuctionCommand command = new AuctionCommand(this, guiManager, messages);
+        this.scandiAuctionBridge = new ScandiAuctionBridge(this, guiManager);
+        scandiAuctionBridge.start();
+
+        AuctionCommand command = new AuctionCommand(this, guiManager, messages, scandiAuctionBridge);
         if (getCommand("auctionhouse") != null) {
             getCommand("auctionhouse").setExecutor(command);
             getCommand("auctionhouse").setTabCompleter(command);
@@ -226,6 +231,9 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             pruneTask.cancel();
         }
         if (recoveryTask != null) recoveryTask.cancel();
+        if (scandiAuctionBridge != null) {
+            scandiAuctionBridge.close();
+        }
         // Finish (or durably decline) every exchange already under way before storage closes.
         if (workers != null) workers.shutdown(SHUTDOWN_WAIT_MILLIS);
         // Create-session items are already durable. Do not duplicate pending listings on shutdown.
