@@ -1,15 +1,15 @@
 name: Build
 
-# Compile + test on every push to main and PRs targeting maintained branches. Catches breakage (e.g. an unresolved
+# Compile + test on every push/PR to main. Catches breakage (e.g. an unresolved
 # dependency or a failing test) long before the Friday release job runs.
 on:
   push:
-    branches: [ main, feat/scandicraft-custom-auction-ui ]
+    branches: [ main ]
     paths-ignore:
       - '**.md'
       - '.github/release/**'
   pull_request:
-    branches: [ main, scandicraft ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
