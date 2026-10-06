@@ -17,6 +17,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.event.EventHandler;
@@ -187,6 +188,10 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
             sendResult(player, session, request.requestId(), "rate_limited");
             return;
         }
+        if (!session.visibleListings.contains(request.listingId())) {
+            sendResult(player, session, request.requestId(), "rejected");
+            return;
+        }
 
         gui.service().loadListing(request.listingId(), optional -> {
             if (!current(player, session)) {
@@ -288,6 +293,10 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
             if (balanceText.isEmpty()) {
                 balanceText = String.format(java.util.Locale.ROOT, "%,.2f", balance);
             }
+
+            session.visibleListings = listings.stream()
+                    .map(AuctionUiProtocol.Listing::id)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
             send(player, new AuctionUiProtocol.Snapshot(
                     session.id,
@@ -487,6 +496,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         final UUID id;
         AuctionUiProtocol.Query query;
         long generation;
+        Set<UUID> visibleListings = Set.of();
         private long lastBrowseNanos;
         private long lastPurchaseNanos;
         private final LinkedHashMap<UUID, Long> recentRequests = new LinkedHashMap<>();
