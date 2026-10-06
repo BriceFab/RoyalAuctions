@@ -11,6 +11,7 @@ import com.mystipixel.royalauctions.data.SortOrder;
 import com.mystipixel.royalauctions.gui.GuiManager;
 import com.mystipixel.royalauctions.util.Text;
 import com.scandicraft.auction.AuctionUiProtocol;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -111,7 +112,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         AuctionUiProtocol.Query query = new AuctionUiProtocol.Query(
                 0,
                 "",
-                search,
+                presentation(search, AuctionUiProtocol.MAX_SEARCH),
                 protocolSort(gui.config().defaultSort()));
         Session session = new Session(UUID.randomUUID(), query);
         sessions.put(player.getUniqueId(), session);
@@ -257,15 +258,31 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
                 return;
             }
 
-            List<AuctionUiProtocol.Category> categories = gui.categories().categories().stream()
-                    .limit(AuctionUiProtocol.MAX_CATEGORIES)
-                    .map(this::category)
-                    .toList();
+            List<AuctionUiProtocol.Category> categories = new ArrayList<>();
+            for (Category category : gui.categories().categories()) {
+                if (categories.size() >= AuctionUiProtocol.MAX_CATEGORIES) {
+                    break;
+                }
+                try {
+                    categories.add(category(category));
+                } catch (IllegalArgumentException error) {
+                    plugin.getLogger().fine("Skipping invalid ScandiCraft auction category '"
+                            + category.id() + "': " + error.getMessage());
+                }
+            }
 
-            List<AuctionUiProtocol.Listing> listings = page.rows().stream()
-                    .limit(PAGE_SIZE)
-                    .map(this::listing)
-                    .toList();
+            List<AuctionUiProtocol.Listing> listings = new ArrayList<>();
+            for (Listing row : page.rows()) {
+                if (listings.size() >= PAGE_SIZE) {
+                    break;
+                }
+                try {
+                    listings.add(listing(row));
+                } catch (IllegalArgumentException error) {
+                    plugin.getLogger().fine("Skipping invalid ScandiCraft auction listing "
+                            + row.id() + ": " + error.getMessage());
+                }
+            }
 
             String balanceText = presentation(gui.vault().format(balance), 64);
             if (balanceText.isEmpty()) {
@@ -288,27 +305,46 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
     }
 
     private AuctionUiProtocol.Category category(Category category) {
-        return new AuctionUiProtocol.Category(
-                presentation(category.id(), 64),
-                presentation(Text.plain(Text.color(category.displayName())), 96),
-                category.icon().getKey().toString());
+        String id = presentation(category.id(), 64);
+        String display = presentation(Text.plain(Text.color(category.displayName())), 96);
+        if (display.isEmpty()) {
+            display = id;
+        }
+        return new AuctionUiProtocol.Category(id, display, category.icon().getKey().toString());
     }
 
     private AuctionUiProtocol.Listing listing(Listing listing) {
         ItemStack item = listing.item();
+        if (item.getType().isAir()) {
+            throw new IllegalArgumentException("listing item is air");
+        }
+
         double displayPrice = listing.displayPrice();
         String priceText = presentation(gui.vault().format(displayPrice), 64);
         if (priceText.isEmpty()) {
             priceText = String.format(java.util.Locale.ROOT, "%,.2f", displayPrice);
         }
 
+        String displayName = presentation(listing.displayName(), 256);
+        if (displayName.isEmpty()) {
+            displayName = item.getType().getKey().toString();
+        }
+        String seller = presentation(listing.sellerName(), 64);
+        if (seller.isEmpty()) {
+            seller = "Unknown";
+        }
+        String category = presentation(listing.category(), 64);
+        if (category.isEmpty()) {
+            category = "misc";
+        }
+
         return new AuctionUiProtocol.Listing(
                 listing.id(),
                 item.getType().getKey().toString(),
                 Math.max(1, Math.min(127, item.getAmount())),
-                presentation(listing.displayName(), 256),
-                presentation(listing.sellerName(), 64),
-                presentation(listing.category(), 64),
+                displayName,
+                seller,
+                category,
                 presentation(listing.tier(), 64),
                 listing.type() == ListingType.AUCTION
                         ? AuctionUiProtocol.ListingKind.AUCTION
