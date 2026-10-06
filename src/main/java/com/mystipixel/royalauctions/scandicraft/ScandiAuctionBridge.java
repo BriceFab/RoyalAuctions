@@ -393,22 +393,28 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         }
         StringBuilder out = new StringBuilder(Math.min(value.length(), maxLength));
         boolean skipLegacyCode = false;
-        for (int i = 0; i < value.length() && out.length() < maxLength; i++) {
-            char c = value.charAt(i);
+        for (int offset = 0; offset < value.length();) {
+            int codePoint = value.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+
             if (skipLegacyCode) {
                 skipLegacyCode = false;
                 continue;
             }
-            if (c == '§') {
+            if (codePoint == '§') {
                 skipLegacyCode = true;
                 continue;
             }
-            if (Character.isISOControl(c)
-                    || Character.getType(c) == Character.FORMAT
-                    || Character.isSurrogate(c)) {
+            if (Character.isISOControl(codePoint)
+                    || Character.getType(codePoint) == Character.FORMAT
+                    || Character.getType(codePoint) == Character.SURROGATE) {
                 continue;
             }
-            out.append(c);
+            int width = Character.charCount(codePoint);
+            if (out.length() + width > maxLength) {
+                break;
+            }
+            out.appendCodePoint(codePoint);
         }
         return out.toString().strip();
     }
