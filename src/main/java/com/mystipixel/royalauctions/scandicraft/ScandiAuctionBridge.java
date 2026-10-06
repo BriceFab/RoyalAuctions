@@ -235,6 +235,8 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
     }
 
     private void loadAndSend(Player player, Session session, AuctionUiProtocol.Query query) {
+        // Once a new snapshot is in flight, cards from the previous view are no longer actionable.
+        session.visibleListings = Set.of();
         long generation = ++session.generation;
         ListingQuery dbQuery = toListingQuery(query, gui);
         gui.service().loadBrowsePage(dbQuery, query.page(), PAGE_SIZE, page -> {
