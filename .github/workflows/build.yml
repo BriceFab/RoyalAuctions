@@ -4,7 +4,7 @@ name: Build
 # dependency or a failing test) long before the Friday release job runs.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feat/scandicraft-custom-auction-ui ]
     paths-ignore:
       - '**.md'
       - '.github/release/**'
