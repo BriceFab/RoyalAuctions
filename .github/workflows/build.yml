@@ -1,6 +1,6 @@
 name: Build
 
-# Compile + test on every push/PR to main. Catches breakage (e.g. an unresolved
+# Compile + test on every push to main and PRs targeting maintained branches. Catches breakage (e.g. an unresolved
 # dependency or a failing test) long before the Friday release job runs.
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - '**.md'
       - '.github/release/**'
   pull_request:
-    branches: [ main ]
+    branches: [ main, scandicraft ]
   workflow_dispatch:
 
 jobs:
