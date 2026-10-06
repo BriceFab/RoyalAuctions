@@ -291,7 +291,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
                 }
             }
 
-            String balanceText = presentation(gui.vault().format(balance), 64);
+            String balanceText = presentation(Text.plain(Text.color(gui.vault().format(balance))), 64);
             if (balanceText.isEmpty()) {
                 balanceText = String.format(java.util.Locale.ROOT, "%,.2f", balance);
             }
@@ -331,7 +331,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         }
 
         double displayPrice = listing.displayPrice();
-        String priceText = presentation(gui.vault().format(displayPrice), 64);
+        String priceText = presentation(Text.plain(Text.color(gui.vault().format(displayPrice))), 64);
         if (priceText.isEmpty()) {
             priceText = String.format(java.util.Locale.ROOT, "%,.2f", displayPrice);
         }
