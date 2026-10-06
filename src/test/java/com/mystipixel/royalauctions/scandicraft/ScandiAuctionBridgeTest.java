@@ -27,6 +27,9 @@ final class ScandiAuctionBridgeTest {
         assertEquals(
                 "abcdef",
                 ScandiAuctionBridge.presentation("abcdefgh", 6));
+        assertEquals(
+                "Épée ⚔️",
+                ScandiAuctionBridge.presentation("Épée ⚔️", 16));
     }
 
     @Test
