@@ -390,6 +390,10 @@ public final class GuiManager {
         navigation.remove(player.getUniqueId());
     }
 
+    public void invalidateNavigation(Player player) {
+        ticket(player);
+    }
+
     private int ticket(Player player) {
         return navigation.merge(player.getUniqueId(), 1, Integer::sum);
     }

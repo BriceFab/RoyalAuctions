@@ -1,21 +1,21 @@
-package com.mystipixel.royalauctions.scandicraft;
+package com.mystipixel.royalauctions.bridge;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mystipixel.royalauctions.data.SortOrder;
-import com.scandicraft.auction.AuctionUiProtocol;
+import com.mystipixel.royalauctions.protocol.AuctionUiProtocol;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-final class ScandiAuctionBridgeTest {
+final class AuctionUiBridgeTest {
 
     @Test
     void sortMappingIsExplicitAndRoundTrips() {
         for (SortOrder sort : SortOrder.values()) {
-            AuctionUiProtocol.Sort protocol = ScandiAuctionBridge.protocolSort(sort);
-            assertEquals(sort, ScandiAuctionBridge.serverSort(protocol));
+            AuctionUiProtocol.Sort protocol = AuctionUiBridge.protocolSort(sort);
+            assertEquals(sort, AuctionUiBridge.serverSort(protocol));
         }
     }
 
@@ -23,18 +23,18 @@ final class ScandiAuctionBridgeTest {
     void presentationDataDropsLegacyFormattingAndControlCharacters() {
         assertEquals(
                 "Price 100",
-                ScandiAuctionBridge.presentation("§aPrice" + (char) 0 + " 100", 64));
+                AuctionUiBridge.presentation("§aPrice" + (char) 0 + " 100", 64));
         assertEquals(
                 "abcdef",
-                ScandiAuctionBridge.presentation("abcdefgh", 6));
+                AuctionUiBridge.presentation("abcdefgh", 6));
         assertEquals(
                 "Épée ⚔️",
-                ScandiAuctionBridge.presentation("Épée ⚔️", 16));
+                AuctionUiBridge.presentation("Épée ⚔️", 16));
     }
 
     @Test
     void sessionRejectsDuplicateRequestIds() {
-        var session = new ScandiAuctionBridge.Session(UUID.randomUUID(), AuctionUiProtocol.Query.newest());
+        var session = new AuctionUiBridge.Session(UUID.randomUUID(), AuctionUiProtocol.Query.newest());
         UUID request = UUID.randomUUID();
 
         assertTrue(session.remember(request));

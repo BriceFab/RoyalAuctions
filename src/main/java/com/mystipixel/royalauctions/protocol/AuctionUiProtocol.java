@@ -1,4 +1,4 @@
-package com.scandicraft.auction;
+package com.mystipixel.royalauctions.protocol;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -11,14 +11,14 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Framework-neutral wire contract for the ScandiCraft auction UI.
+ * Framework-neutral wire contract for the RoyalAuctions auction UI.
  *
  * <p>The server remains authoritative. Client messages contain only browse intent
  * or stable listing identifiers; they never contain commands, ItemStacks, money
  * mutations or trusted ownership state.
  */
 public final class AuctionUiProtocol {
-    public static final String CHANNEL = "scandicraft:auction_ui";
+    public static final String CHANNEL = "royalauctions:auction_ui";
     public static final int VERSION = 1;
     public static final int MAX_BYTES = 512 * 1024;
     public static final int MAX_PAGE_SIZE = 60;

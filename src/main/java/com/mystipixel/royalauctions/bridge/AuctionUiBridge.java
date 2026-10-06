@@ -1,4 +1,4 @@
-package com.mystipixel.royalauctions.scandicraft;
+package com.mystipixel.royalauctions.bridge;
 
 import com.mystipixel.royalauctions.RoyalAuctionsPlugin;
 import com.mystipixel.royalauctions.category.Category;
@@ -10,7 +10,7 @@ import com.mystipixel.royalauctions.data.ListingType;
 import com.mystipixel.royalauctions.data.SortOrder;
 import com.mystipixel.royalauctions.gui.GuiManager;
 import com.mystipixel.royalauctions.util.Text;
-import com.scandicraft.auction.AuctionUiProtocol;
+import com.mystipixel.royalauctions.protocol.AuctionUiProtocol;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -24,6 +24,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -32,16 +33,16 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Thin Paper/Bukkit transport adapter for ScandiCraft's rich Fabric auction browser.
+ * Thin Paper/Bukkit transport adapter for RoyalAuctions' custom auction browser.
  *
  * <p>RoyalAuctions remains the source of truth. The bridge only turns the existing browse service into
  * presentation DTOs and turns a client purchase intent back into the existing durable purchase path.
  * It never trusts client-side item, money, ownership or listing state.
  */
-public final class ScandiAuctionBridge implements PluginMessageListener, Listener {
+public final class AuctionUiBridge implements PluginMessageListener, Listener {
 
     static final int PAGE_SIZE = 8;
-    private static final int MAX_PLUGIN_MESSAGE_BYTES = 32_000;
+    private static final int MAX_PLUGIN_MESSAGE_BYTES = AuctionUiProtocol.MAX_BYTES;
     private static final int MAX_RECENT_REQUESTS = 128;
     private static final long REQUEST_TTL_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final long OPEN_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(200);
@@ -54,7 +55,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
     private final Map<UUID, Long> lastOpen = new HashMap<>();
     private boolean started;
 
-    public ScandiAuctionBridge(RoyalAuctionsPlugin plugin, GuiManager gui) {
+    public AuctionUiBridge(RoyalAuctionsPlugin plugin, GuiManager gui) {
         this.plugin = plugin;
         this.gui = gui;
     }
@@ -68,7 +69,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         messenger.registerOutgoingPluginChannel(plugin, AuctionUiProtocol.CHANNEL);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         started = true;
-        plugin.getLogger().info("ScandiCraft custom auction UI bridge registered on "
+        plugin.getLogger().info("RoyalAuctions custom auction UI bridge registered on "
                 + AuctionUiProtocol.CHANNEL + " (protocol v" + AuctionUiProtocol.VERSION + ").");
     }
 
@@ -85,7 +86,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         started = false;
     }
 
-    /** True only when this exact player connection advertised the ScandiCraft auction payload channel. */
+    /** True only when this exact player connection advertised the RoyalAuctions auction payload channel. */
     public boolean supports(Player player) {
         return started
                 && player != null
@@ -94,7 +95,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
     }
 
     /**
-     * Open the rich browser when the ScandiCraft client supports it.
+     * Open the rich browser when the RoyalAuctions client supports it.
      *
      * @return true when the command has been handled by the custom UI; false means callers must use
      *         the existing inventory GUI unchanged.
@@ -120,6 +121,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
 
         // /ah can be triggered from the inventory shortcut. Close the server inventory first so a
         // vanilla container cannot stay logically open underneath the client-rendered screen.
+        gui.invalidateNavigation(player);
         player.closeInventory();
         loadAndSend(player, session, query);
         return true;
@@ -193,8 +195,10 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
             return;
         }
 
+        long generation = session.generation;
         gui.service().loadListing(request.listingId(), optional -> {
-            if (!current(player, session)) {
+            if (!current(player, session) || session.generation != generation || !player.hasPermission("royalauctions.use")
+                    || !session.visibleListings.contains(request.listingId())) {
                 return;
             }
             if (optional.isEmpty()) {
@@ -273,7 +277,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
                 try {
                     categories.add(category(category));
                 } catch (IllegalArgumentException error) {
-                    plugin.getLogger().fine("Skipping invalid ScandiCraft auction category '"
+                    plugin.getLogger().fine("Skipping invalid RoyalAuctions auction category '"
                             + category.id() + "': " + error.getMessage());
                 }
             }
@@ -286,7 +290,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
                 try {
                     listings.add(listing(row));
                 } catch (IllegalArgumentException error) {
-                    plugin.getLogger().fine("Skipping invalid ScandiCraft auction listing "
+                    plugin.getLogger().fine("Skipping invalid RoyalAuctions auction listing "
                             + row.id() + ": " + error.getMessage());
                 }
             }
@@ -311,7 +315,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
                     categories,
                     listings));
         } catch (RuntimeException error) {
-            plugin.getLogger().warning("Could not build ScandiCraft auction snapshot: " + error.getMessage());
+            plugin.getLogger().warning("Could not build RoyalAuctions auction snapshot: " + error.getMessage());
         }
     }
 
@@ -382,7 +386,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
             return;
         }
         if (bytes.length > MAX_PLUGIN_MESSAGE_BYTES) {
-            plugin.getLogger().warning("ScandiCraft auction payload exceeded plugin-message safety limit: "
+            plugin.getLogger().warning("RoyalAuctions auction payload exceeded plugin-message safety limit: "
                     + bytes.length + " bytes.");
             return;
         }
@@ -393,6 +397,11 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         return player.isOnline()
                 && supports(player)
                 && sessions.get(player.getUniqueId()) == session;
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        sessions.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler
@@ -411,6 +420,11 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         if (event.getPlugin() != plugin || !started) {
             return;
         }
+        closeScreens();
+    }
+
+    /** End active views before configuration reload or plugin shutdown. */
+    public void closeScreens() {
         for (Map.Entry<UUID, Session> entry : List.copyOf(sessions.entrySet())) {
             Player player = plugin.getServer().getPlayer(entry.getKey());
             Session session = entry.getValue();
@@ -427,6 +441,7 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
                         List.of()));
             }
         }
+        sessions.clear();
     }
 
     static ListingQuery toListingQuery(AuctionUiProtocol.Query query, GuiManager gui) {

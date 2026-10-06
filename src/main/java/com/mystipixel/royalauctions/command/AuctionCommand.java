@@ -3,7 +3,7 @@ package com.mystipixel.royalauctions.command;
 import com.mystipixel.royalauctions.RoyalAuctionsPlugin;
 import com.mystipixel.royalauctions.gui.GuiManager;
 import com.mystipixel.royalauctions.message.MessageManager;
-import com.mystipixel.royalauctions.scandicraft.ScandiAuctionBridge;
+import com.mystipixel.royalauctions.bridge.AuctionUiBridge;
 import com.mystipixel.royalauctions.util.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
@@ -26,14 +26,14 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
     private final RoyalAuctionsPlugin plugin;
     private final GuiManager gui;
     private final MessageManager messages;
-    private final ScandiAuctionBridge scandiAuctionBridge;
+    private final AuctionUiBridge auctionUiBridge;
 
     public AuctionCommand(RoyalAuctionsPlugin plugin, GuiManager gui, MessageManager messages,
-                          ScandiAuctionBridge scandiAuctionBridge) {
+                          AuctionUiBridge auctionUiBridge) {
         this.plugin = plugin;
         this.gui = gui;
         this.messages = messages;
-        this.scandiAuctionBridge = scandiAuctionBridge;
+        this.auctionUiBridge = auctionUiBridge;
     }
 
     @Override
@@ -65,7 +65,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            if (!scandiAuctionBridge.open(player, null)) {
+            if (!auctionUiBridge.open(player, null)) {
                 gui.openHub(player);
             }
             return true;
@@ -73,7 +73,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
 
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "browse" -> {
-                if (!scandiAuctionBridge.open(player, null)) {
+                if (!auctionUiBridge.open(player, null)) {
                     gui.openBrowse(player);
                 }
             }
@@ -89,7 +89,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 String query = args.length < 2
                         ? null
                         : String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
-                if (!scandiAuctionBridge.open(player, query)) {
+                if (!auctionUiBridge.open(player, query)) {
                     if (query == null) {
                         gui.openBrowse(player);
                     } else {
