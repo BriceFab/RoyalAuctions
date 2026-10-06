@@ -22,6 +22,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.messaging.Messenger;
@@ -73,25 +74,6 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         if (!started) {
             return;
         }
-
-        // Do not strand a client on a dead server-driven screen during plugin/server shutdown.
-        for (Map.Entry<UUID, Session> entry : List.copyOf(sessions.entrySet())) {
-            Player player = plugin.getServer().getPlayer(entry.getKey());
-            Session session = entry.getValue();
-            if (player != null && supports(player)) {
-                send(player, new AuctionUiProtocol.Snapshot(
-                        session.id,
-                        false,
-                        session.query,
-                        1,
-                        0,
-                        0,
-                        "0",
-                        List.of(),
-                        List.of()));
-            }
-        }
-
         Messenger messenger = plugin.getServer().getMessenger();
         messenger.unregisterIncomingPluginChannel(plugin, AuctionUiProtocol.CHANNEL, this);
         messenger.unregisterOutgoingPluginChannel(plugin, AuctionUiProtocol.CHANNEL);
@@ -371,6 +353,33 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         UUID player = event.getPlayer().getUniqueId();
         sessions.remove(player);
         lastOpen.remove(player);
+    }
+
+    /**
+     * Plugin messages require an enabled source plugin. Paper fires PluginDisableEvent while the
+     * plugin is still able to send, whereas JavaPlugin#onDisable runs after isEnabled became false.
+     */
+    @EventHandler
+    public void onPluginDisable(PluginDisableEvent event) {
+        if (event.getPlugin() != plugin || !started) {
+            return;
+        }
+        for (Map.Entry<UUID, Session> entry : List.copyOf(sessions.entrySet())) {
+            Player player = plugin.getServer().getPlayer(entry.getKey());
+            Session session = entry.getValue();
+            if (player != null && supports(player)) {
+                send(player, new AuctionUiProtocol.Snapshot(
+                        session.id,
+                        false,
+                        session.query,
+                        1,
+                        0,
+                        0,
+                        "0",
+                        List.of(),
+                        List.of()));
+            }
+        }
     }
 
     static ListingQuery toListingQuery(AuctionUiProtocol.Query query, GuiManager gui) {
