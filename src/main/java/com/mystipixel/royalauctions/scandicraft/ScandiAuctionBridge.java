@@ -73,6 +73,25 @@ public final class ScandiAuctionBridge implements PluginMessageListener, Listene
         if (!started) {
             return;
         }
+
+        // Do not strand a client on a dead server-driven screen during plugin/server shutdown.
+        for (Map.Entry<UUID, Session> entry : List.copyOf(sessions.entrySet())) {
+            Player player = plugin.getServer().getPlayer(entry.getKey());
+            Session session = entry.getValue();
+            if (player != null && supports(player)) {
+                send(player, new AuctionUiProtocol.Snapshot(
+                        session.id,
+                        false,
+                        session.query,
+                        1,
+                        0,
+                        0,
+                        "0",
+                        List.of(),
+                        List.of()));
+            }
+        }
+
         Messenger messenger = plugin.getServer().getMessenger();
         messenger.unregisterIncomingPluginChannel(plugin, AuctionUiProtocol.CHANNEL, this);
         messenger.unregisterOutgoingPluginChannel(plugin, AuctionUiProtocol.CHANNEL);
