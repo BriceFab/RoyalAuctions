@@ -23,7 +23,7 @@ final class ScandiAuctionBridgeTest {
     void presentationDataDropsLegacyFormattingAndControlCharacters() {
         assertEquals(
                 "Price 100",
-                ScandiAuctionBridge.presentation("§aPrice\u0000 100", 64));
+                ScandiAuctionBridge.presentation("§aPrice" + (char) 0 + " 100", 64));
         assertEquals(
                 "abcdef",
                 ScandiAuctionBridge.presentation("abcdefgh", 6));
