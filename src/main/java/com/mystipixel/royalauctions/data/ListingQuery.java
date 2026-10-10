@@ -14,14 +14,20 @@ import java.util.Set;
  * filter, or turned a page.
  */
 public record ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort,
-                           Set<String> searchNames) {
+                           Set<String> searchNames, Set<String> enchantments) {
 
     public ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort) {
-        this(category, tier, type, search, sort, Set.of());
+        this(category, tier, type, search, sort, Set.of(), Set.of());
+    }
+
+    public ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort,
+                        Set<String> searchNames) {
+        this(category, tier, type, search, sort, searchNames, Set.of());
     }
 
     public ListingQuery {
         searchNames = searchNames == null ? Set.of() : Set.copyOf(searchNames);
+        enchantments = enchantments == null ? Set.of() : Set.copyOf(enchantments);
         if (sort == null) {
             sort = SortOrder.NEWEST;
         }

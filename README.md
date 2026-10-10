@@ -60,7 +60,7 @@ Base command `/auctionhouse`, aliases **`/ah`**, `/auctions`, `/auction`.
 | `/ah browse` | Straight to the browser |
 | `/ah bids` | Auctions you have bid on ("top bidder on X of Y") |
 | `/ah sell` *(or `create`)* | Create-auction flow |
-| `/ah search <query>` | Search listings by name |
+| `/ah search <query>` | Search listings by name or enchantment |
 | `/ah listings` | Manage your own listings |
 | `/ah collect` | Claim purchases and returned items |
 | `/ah <username>` | View that player's active auctions |
@@ -425,3 +425,5 @@ Java 21, Maven. `eco` is a `provided` dependency resolved from the Auxilor repo.
 
 Existing file-based payouts and refunds remain recoverable after upgrading. New exchanges use
 the database journal above. See [legacy payment recovery notes](docs/payment-recovery.md).
+
+Search examples, translated names and upgrade behavior: [enchantment search](docs/enchantment-search.md).

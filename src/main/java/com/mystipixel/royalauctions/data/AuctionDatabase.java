@@ -135,6 +135,7 @@ public final class AuctionDatabase {
                     + "sold_at BIGINT)");
             // Upgrade databases created before bidding / tiers were added. Existing rows get a NULL
             // tier, which simply means "no rarity" — they still show under the unfiltered view.
+            addColumn(st, "enchantments", bigText());
             addColumn(st, "tier", "VARCHAR(32)");
             addColumn(st, "type", "VARCHAR(16) NOT NULL DEFAULT 'BIN'");
             addColumn(st, "current_bid", "DOUBLE PRECISION");
@@ -250,8 +251,8 @@ public final class AuctionDatabase {
     static void insertListing(Connection c, Listing l, ListingStatus status) throws SQLException {
         String sql = "INSERT INTO ra_listings "
                 + "(id,seller_id,seller_name,item_data,display_name,category,tier,type,price,"
-                + "current_bid,top_bidder_id,top_bidder_name,bid_count,created_at,expires_at,status) "
-                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                + "current_bid,top_bidder_id,top_bidder_name,bid_count,created_at,expires_at,status,enchantments) "
+                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, l.id().toString());
             ps.setString(2, l.sellerId().toString());
@@ -269,7 +270,41 @@ public final class AuctionDatabase {
             ps.setLong(14, l.createdAt());
             ps.setLong(15, l.expiresAt());
             ps.setString(16, status.name());
+            ps.setString(17, l.enchantments());
             ps.executeUpdate();
+        }
+    }
+
+    /** Upgrade derived metadata off-thread, at most 100 serialized items in memory at once. */
+    public void indexMissingEnchantments() throws SQLException {
+        record PendingIndex(String id, String data) { }
+        String after = "";
+        while (true) {
+            List<PendingIndex> batch = new ArrayList<>();
+            try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
+                    "SELECT id,item_data FROM ra_listings WHERE enchantments IS NULL AND id > ? ORDER BY id LIMIT 100")) {
+                ps.setString(1, after);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) batch.add(new PendingIndex(rs.getString("id"), rs.getString("item_data")));
+                }
+            }
+            if (batch.isEmpty()) return;
+            for (PendingIndex listing : batch) {
+                after = listing.id();
+                try {
+                    String index = com.mystipixel.royalauctions.util.EnchantmentSearch.index(
+                            ItemSerialization.deserialize(ItemSerialization.fromBase64(listing.data())));
+                    try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
+                            "UPDATE ra_listings SET enchantments=? WHERE id=? AND enchantments IS NULL")) {
+                        ps.setString(1, index);
+                        ps.setString(2, listing.id());
+                        ps.executeUpdate();
+                    }
+                } catch (RuntimeException e) {
+                    // Leave the source and index untouched; retry on next startup/reload.
+                    logger.log(Level.WARNING, "Could not index enchantments for listing " + listing.id(), e);
+                }
+            }
         }
     }
 
@@ -354,6 +389,10 @@ public final class AuctionDatabase {
                         .append(String.join(",", java.util.Collections.nCopies(query.searchNames().size(), "?")))
                         .append(")");
                 params.addAll(query.searchNames());
+            }
+            for (String token : query.enchantments()) {
+                where.append(" OR enchantments LIKE ? ESCAPE '!'");
+                params.add("%" + escapeLike(token) + "%");
             }
             where.append(")");
         }

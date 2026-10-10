@@ -31,6 +31,10 @@ public final class Listing {
     private final int bidCount;
 
     private transient ItemStack cachedItem;
+    private String enchantments;
+
+    public String enchantments() { return enchantments; }
+    public void enchantments(String value) { enchantments = value; }
 
     public Listing(UUID id, UUID sellerId, String sellerName, byte[] itemData, String displayName,
                    String category, String tier, ListingType type, double price, long createdAt, long expiresAt,
