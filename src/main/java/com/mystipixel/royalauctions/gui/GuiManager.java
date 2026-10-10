@@ -314,9 +314,16 @@ public final class GuiManager {
 
     // ------------------------------------------------------------------ sign input: search / price / bid
 
+    private final com.mystipixel.royalauctions.util.EnchantmentSearch enchantmentSearch =
+            new com.mystipixel.royalauctions.util.EnchantmentSearch();
+
+    public com.mystipixel.royalauctions.util.EnchantmentSearch enchantmentSearch() { return enchantmentSearch; }
+
     public void beginSearch(Player player, String category, SortOrder sort) {
         ticket(player);
-        signInput.request(player, List.of("^^^^^^^^^^^^^^^", "Search by name", "blank = show all"), input -> {
+        signInput.request(player, List.of("^^^^^^^^^^^^^^^",
+                com.mystipixel.royalauctions.util.Text.plain(messages.component("search.hint-name", Map.of())),
+                com.mystipixel.royalauctions.util.Text.plain(messages.component("search.hint-level", Map.of()))), input -> {
             if (input == null || input.isBlank()) {
                 openBrowse(player, category, null, sort, 0);
             } else {

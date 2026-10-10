@@ -153,7 +153,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(Text.chat("&e/ah bids &7- auctions you've bid on"));
         player.sendMessage(Text.chat("&e/ah <player> &7- view a player's auctions"));
         player.sendMessage(Text.chat("&e/ah sell &7- open the Create Auction menu"));
-        player.sendMessage(Text.chat("&e/ah search <query> &7- search by name"));
+        messages.send(player, "search.help");
         player.sendMessage(Text.chat("&e/ah listings &7- manage your listings"));
         player.sendMessage(Text.chat("&e/ah collect &7- claim purchases & returns"));
     }
