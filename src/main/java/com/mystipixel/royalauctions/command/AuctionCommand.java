@@ -3,6 +3,7 @@ package com.mystipixel.royalauctions.command;
 import com.mystipixel.royalauctions.RoyalAuctionsPlugin;
 import com.mystipixel.royalauctions.gui.GuiManager;
 import com.mystipixel.royalauctions.message.MessageManager;
+import com.mystipixel.royalauctions.bridge.AuctionUiBridge;
 import com.mystipixel.royalauctions.util.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
@@ -25,11 +26,14 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
     private final RoyalAuctionsPlugin plugin;
     private final GuiManager gui;
     private final MessageManager messages;
+    private final AuctionUiBridge auctionUiBridge;
 
-    public AuctionCommand(RoyalAuctionsPlugin plugin, GuiManager gui, MessageManager messages) {
+    public AuctionCommand(RoyalAuctionsPlugin plugin, GuiManager gui, MessageManager messages,
+                          AuctionUiBridge auctionUiBridge) {
         this.plugin = plugin;
         this.gui = gui;
         this.messages = messages;
+        this.auctionUiBridge = auctionUiBridge;
     }
 
     @Override
@@ -61,12 +65,18 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            gui.openHub(player);
+            if (!auctionUiBridge.open(player, null)) {
+                gui.openHub(player);
+            }
             return true;
         }
 
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "browse" -> gui.openBrowse(player);
+            case "browse" -> {
+                if (!auctionUiBridge.open(player, null)) {
+                    gui.openBrowse(player);
+                }
+            }
             case "bids" -> gui.openBids(player);
             case "sell", "create" -> {
                 if (!player.hasPermission("royalauctions.sell")) {
@@ -76,11 +86,15 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 }
             }
             case "search" -> {
-                if (args.length < 2) {
-                    gui.openBrowse(player);
-                } else {
-                    String query = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
-                    gui.openBrowse(player, null, query, plugin.pluginConfig().defaultSort(), 0);
+                String query = args.length < 2
+                        ? null
+                        : String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+                if (!auctionUiBridge.open(player, query)) {
+                    if (query == null) {
+                        gui.openBrowse(player);
+                    } else {
+                        gui.openBrowse(player, null, query, plugin.pluginConfig().defaultSort(), 0);
+                    }
                 }
             }
             case "collect", "collection" -> gui.openCollection(player);

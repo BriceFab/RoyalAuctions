@@ -14,6 +14,7 @@ import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import com.mystipixel.royalauctions.service.AuctionService;
 import com.mystipixel.royalauctions.service.Workers;
+import com.mystipixel.royalauctions.bridge.AuctionUiBridge;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -48,6 +49,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     private GuiManager guiManager;
     private TextInput textInput;
     private Workers workers;
+    private AuctionUiBridge auctionUiBridge;
 
     private BukkitTask expiryTask;
     private BukkitTask recoveryTask;
@@ -137,7 +139,10 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(notifier, this);
         service.eventNotifier(notifier::notifyOnline);
 
-        AuctionCommand command = new AuctionCommand(this, guiManager, messages);
+        this.auctionUiBridge = new AuctionUiBridge(this, guiManager);
+        auctionUiBridge.start();
+
+        AuctionCommand command = new AuctionCommand(this, guiManager, messages, auctionUiBridge);
         if (getCommand("auctionhouse") != null) {
             getCommand("auctionhouse").setExecutor(command);
             getCommand("auctionhouse").setTabCompleter(command);
@@ -227,6 +232,9 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             pruneTask.cancel();
         }
         if (recoveryTask != null) recoveryTask.cancel();
+        if (auctionUiBridge != null) {
+            auctionUiBridge.close();
+        }
         // Finish (or durably decline) every exchange already under way before storage closes.
         if (workers != null) workers.shutdown(SHUTDOWN_WAIT_MILLIS);
         // Create-session items are already durable. Do not duplicate pending listings on shutdown.
@@ -274,6 +282,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
 
     /** Reload config, messages and categories. Storage-backend changes still need a restart. */
     public void reloadEverything() {
+        if (auctionUiBridge != null) auctionUiBridge.closeScreens();
         config.reload();
         validateConfig();
         messages.reload();
