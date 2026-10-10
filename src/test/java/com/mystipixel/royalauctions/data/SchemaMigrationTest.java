@@ -46,7 +46,7 @@ class SchemaMigrationTest {
 
     @Test void freshInstallHasEveryListingColumn() throws Exception {
         open().close();
-        assertTrue(listingColumns().containsAll(Set.of("tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count")));
+        assertTrue(listingColumns().containsAll(Set.of("enchantments", "tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count")));
     }
 
     @Test void upgradesPreBiddingDatabaseAndNormalisesStoredIds() throws Exception {
@@ -60,7 +60,7 @@ class SchemaMigrationTest {
         }
         var db = open();
         try {
-            assertTrue(listingColumns().containsAll(Set.of("tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count")));
+            assertTrue(listingColumns().containsAll(Set.of("enchantments", "tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count")));
             Listing upgraded = db.getListing(id).orElseThrow();
             assertEquals("weapons", upgraded.category());
             assertEquals(ListingType.BIN, upgraded.type());

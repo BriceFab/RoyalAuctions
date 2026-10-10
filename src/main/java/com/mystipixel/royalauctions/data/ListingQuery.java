@@ -9,9 +9,15 @@ package com.mystipixel.royalauctions.data;
  * read (including each listing's serialized item) every time anyone opened the auction house, changed a
  * filter, or turned a page.
  */
-public record ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort) {
+public record ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort,
+                           java.util.Set<String> enchantments) {
+
+    public ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort) {
+        this(category, tier, type, search, sort, java.util.Set.of());
+    }
 
     public ListingQuery {
+        enchantments = enchantments == null ? java.util.Set.of() : java.util.Set.copyOf(enchantments);
         if (sort == null) {
             sort = SortOrder.NEWEST;
         }

@@ -162,6 +162,7 @@ public final class AuctionService {
         long now = System.currentTimeMillis();
         Listing listing = new Listing(UUID.randomUUID(), seller.getUniqueId(), seller.getName(), ItemSerialization.serialize(item),
                 displayNameOf(item), category, tiers.tierOf(item), type, price, now, Math.addExact(now, duration), ListingStatus.DRAFT, 0, null, null, 0);
+        listing.enchantments(com.mystipixel.royalauctions.util.EnchantmentSearch.index(item));
         double fee = config.feeFor(price);
         int limit = listingLimit(seller);
         async(() -> {
@@ -260,6 +261,7 @@ public final class AuctionService {
     public void repairAllCategories() {
         async(() -> {
             try {
+                db.indexMissingEnchantments();
                 repairStaleCategories(db.activeListings());
             } catch (Exception e) {
                 logError("repairing listing categories", e);

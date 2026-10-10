@@ -48,7 +48,7 @@ slots:
     lore:
       - "&7Current: &f%search%"
       - ""
-      - "&eClick to search by name"
+      - "&eClick to search by name or enchantment"
     row: 6
     column: 4
     left-click:

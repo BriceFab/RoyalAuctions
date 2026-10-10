@@ -44,6 +44,9 @@ expiry:
   expired-notify: "{prefix}&e{count} &7of your listings expired and were returned to &f/ah collect&7."
 
 search:
+  help: "&e/ah search <query> &7- search by name or enchantment"
+  hint-name: "Name/enchantment"
+  hint-level: "e.g. sharpness V"
   prompt: "{prefix}&eType your search in chat, or type &fcancel&e to go back."
   cancelled: "{prefix}&7Search cancelled."
 
