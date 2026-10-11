@@ -71,10 +71,10 @@ public final class BidsGui extends AuctionGui {
             lore.add(manager.t("current-bid", "price", manager.vault().format(listing.displayPrice())));
             lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             if (!winning) {
-                lore.add(manager.t("leader", "bidder", listing.topBidderName() == null ? "-" : listing.topBidderName()));
+                lore.add(manager.t("leader", "bidder", listing.topBidderName() == null ? manager.t("no-leader") : listing.topBidderName()));
             }
             lore.add("");
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             lore.add("");
             lore.add(manager.t(winning ? "winning" : "click-bid-again"));
 

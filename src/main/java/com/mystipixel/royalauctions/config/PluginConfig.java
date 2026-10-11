@@ -46,16 +46,6 @@ public final class PluginConfig {
     private double bidIncrementPercent;
     private long antiSnipeSeconds;
 
-    private String browseTitle;
-    private String collectionTitle;
-    private String listingsTitle;
-    private String confirmTitle;
-    private String createTitle;
-    private String durationTitle;
-    private String confirmAuctionTitle;
-    private String bidTitle;
-    private int guiRows;
-
     private SortOrder defaultSort;
     private long expirySweepTicks;
     private int closedRetentionDays;
@@ -100,17 +90,6 @@ public final class PluginConfig {
         this.bidMinIncrement = bidding.getDouble("min-increment", 10.0);
         this.bidIncrementPercent = bidding.getDouble("increment-percent", 0.05);
         this.antiSnipeSeconds = Math.max(0, bidding.getLong("anti-snipe-seconds", 60));
-
-        ConfigurationSection gui = section(c, "gui");
-        this.browseTitle = gui.getString("browse-title", "&8Auction House");
-        this.collectionTitle = gui.getString("collection-title", "&8Collection");
-        this.listingsTitle = gui.getString("listings-title", "&8Manage Auctions");
-        this.confirmTitle = gui.getString("confirm-title", "&8Confirm Purchase");
-        this.createTitle = gui.getString("create-title", "&8Create Auction");
-        this.durationTitle = gui.getString("duration-title", "&8Auction Duration");
-        this.confirmAuctionTitle = gui.getString("confirm-auction-title", "&8Confirm Auction");
-        this.bidTitle = gui.getString("bid-title", "&8Place Bid");
-        this.guiRows = Math.min(6, Math.max(2, gui.getInt("rows", 6)));
 
         this.defaultSort = SortOrder.fromString(c.getString("default-sort"), SortOrder.NEWEST);
         this.expirySweepTicks = Math.max(1, c.getLong("expiry-sweep-minutes", 5)) * 60L * 20L;
@@ -331,42 +310,6 @@ public final class PluginConfig {
 
     public boolean instantDeliver() {
         return instantDeliver;
-    }
-
-    public String browseTitle() {
-        return browseTitle;
-    }
-
-    public String collectionTitle() {
-        return collectionTitle;
-    }
-
-    public String listingsTitle() {
-        return listingsTitle;
-    }
-
-    public String confirmTitle() {
-        return confirmTitle;
-    }
-
-    public String createTitle() {
-        return createTitle;
-    }
-
-    public String durationTitle() {
-        return durationTitle;
-    }
-
-    public String confirmAuctionTitle() {
-        return confirmAuctionTitle;
-    }
-
-    public String bidTitle() {
-        return bidTitle;
-    }
-
-    public int guiRows() {
-        return guiRows;
     }
 
     public SortOrder defaultSort() {

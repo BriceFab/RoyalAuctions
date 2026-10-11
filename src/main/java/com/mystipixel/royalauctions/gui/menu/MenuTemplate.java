@@ -51,6 +51,8 @@ public final class MenuTemplate {
                                   MenuAction left, MenuAction right) {
     }
 
+    private static final List<String> TEXT_SECTIONS = List.of("type-materials");
+
     private final String title;
     private final int rows;
     private final ItemStack[] mask;                      // per-index filler (null = dynamic region / empty)
@@ -68,10 +70,21 @@ public final class MenuTemplate {
         this.source = source;
     }
 
-    public static MenuTemplate load(File file, String defaultTitle, int defaultRows) {
+    /**
+     * {@code bundled} is the jar's copy of the same file. It backs a missing title, rows and the
+     * text-only sections; buttons, filler and regions always come from the server's file alone.
+     */
+    public static MenuTemplate load(File file, YamlConfiguration bundled) {
         FileConfiguration cfg = YamlConfiguration.loadConfiguration(file);
-        String title = cfg.getString("title", defaultTitle);
-        int rows = Math.max(1, Math.min(6, cfg.getInt("rows", defaultRows)));
+        String title = cfg.getString("title", bundled.getString("title", ""));
+        int rows = Math.max(1, Math.min(6, cfg.getInt("rows", bundled.getInt("rows", 6))));
+        YamlConfiguration textDefaults = new YamlConfiguration();
+        for (String section : TEXT_SECTIONS) {
+            if (bundled.contains(section)) {
+                textDefaults.set(section, bundled.get(section));
+            }
+        }
+        cfg.setDefaults(textDefaults);
         int size = rows * 9;
 
         ItemStack[] mask = new ItemStack[size];
@@ -237,6 +250,12 @@ public final class MenuTemplate {
     /** Indices of a named dynamic region, e.g. {@code content-slots}. */
     public List<Integer> slots(String regionName) {
         return regions.getOrDefault(regionName, List.of());
+    }
+
+    /** A single value from the menu file, e.g. "type-materials.bin". */
+    public String text(String path) {
+        String value = source.getString(path);  // with no default given, so the bundled one applies
+        return value == null ? "" : value;
     }
 
     /** Lore lines at {@code path} (e.g. "listing-lore.auction"), placeholders filled. */

@@ -171,7 +171,7 @@ public final class OfflineEventNotifier implements Listener {
                 hidden++;
                 continue;
             }
-            String item = event.item() == null ? "an item" : event.item();
+            String item = event.item() == null ? messages.text("away.unknown-item") : event.item();
             switch (event.type()) {
                 case OfflineEvent.SOLD -> messages.send(player, "away.sold",
                         "item", item, "amount", vault.format(event.amount()));

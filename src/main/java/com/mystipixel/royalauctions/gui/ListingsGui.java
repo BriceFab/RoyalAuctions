@@ -67,7 +67,7 @@ public final class ListingsGui extends AuctionGui {
                 lore.add(manager.t("type-line", "type", manager.t("type.bin")));
                 lore.add(manager.t("price", "price", manager.vault().format(listing.price())));
             }
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(remaining)));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(remaining)));
             lore.add("");
             lore.add(manager.t(listing.hasBids() ? "cannot-cancel" : "right-click-cancel"));
             ItemStack icon = GuiUtil.appendLore(listing.item(), lore);

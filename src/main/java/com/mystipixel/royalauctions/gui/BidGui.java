@@ -57,7 +57,7 @@ public final class BidGui extends AuctionGui {
                 lore.add(manager.t("starting-bid", "price", manager.vault().format(listing.price())));
                 lore.add(manager.t("no-bids"));
             }
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(remaining)));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(remaining)));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));
         }
     }

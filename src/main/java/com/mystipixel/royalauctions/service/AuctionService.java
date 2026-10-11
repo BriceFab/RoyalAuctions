@@ -64,10 +64,10 @@ public final class AuctionService {
     private void logError(String what, Throwable e) { plugin.getLogger().log(Level.SEVERE, "Error " + what, e); }
     private void tell(Player player, String key, String... values) { if (player.isOnline()) messages.send(player, key, values); }
     private void failure(Player player, Exception e) {
-        if (e instanceof AuctionTransactions.Rejected r) tell(player, "exchange.rejected", "reason",
-                r.key == null ? r.getMessage() : messages.text("exchange.reasons." + r.key, r.values));
+        if (e instanceof AuctionTransactions.Rejected r) tell(player, "exchange.rejected", "reason", reason(r));
         else { logError("reserving an auction operation", e); tell(player, "exchange.unconfirmed"); }
     }
+    private String reason(AuctionTransactions.Rejected r) { return messages.text("exchange.reasons." + r.key, r.values); }
     private void result(Player player, UUID operation, ExternalEffectRunner.Result result) {
         if (result == ExternalEffectRunner.Result.PENDING)
             tell(player, "exchange.pending", "operation", operation.toString());
@@ -470,26 +470,32 @@ public final class AuctionService {
         if (args.length > 1 && args[1].equalsIgnoreCase("resolve")) {
             if (!(sender instanceof org.bukkit.command.ConsoleCommandSender) || args.length != 5
                     || !Set.of("applied", "not-applied").contains(args[3]) || !args[4].equals("confirm")) {
-                sender.sendMessage("Console: /ah recovery resolve <operation-id> <applied|not-applied> confirm"); return;
+                messages.send(sender, "recovery.resolve-usage"); return;
             }
             UUID id;
-            try { id = UUID.fromString(args[2]); } catch (IllegalArgumentException e) { sender.sendMessage("Invalid operation ID."); return; }
+            try { id = UUID.fromString(args[2]); } catch (IllegalArgumentException e) { messages.send(sender, "recovery.invalid-id"); return; }
             async(() -> {
-                try { transactions.resolve(id, args[3].equals("applied"), sender.getName()); sync(() -> sender.sendMessage("Reconciled " + id)); }
-                catch (Exception e) { sync(() -> sender.sendMessage("Recovery refused: " + e.getMessage())); }
+                try { transactions.resolve(id, args[3].equals("applied"), sender.getName()); sync(() -> messages.send(sender, "recovery.reconciled", "operation", id.toString())); }
+                catch (Exception e) { sync(() -> messages.send(sender, "recovery.refused", "reason",
+                        e instanceof AuctionTransactions.Rejected r ? reason(r) : String.valueOf(e.getMessage()))); }
             });
             return;
         }
         int page;
         try { page = args.length == 1 ? 1 : Integer.parseInt(args[1]); if (page < 1 || page > 1_000_000) throw new NumberFormatException(); }
-        catch (NumberFormatException e) { sender.sendMessage("Usage: /ah recovery [page] or /ah recovery resolve <id> <applied|not-applied> confirm"); return; }
+        catch (NumberFormatException e) { messages.send(sender, "recovery.usage"); return; }
         async(() -> {
             try {
-                List<String> lines = new ArrayList<>();
-                for (var o : transactions.pending(50, (page - 1) * 50)) lines.add(o.id() + " " + o.kind() + " " + o.state()
-                        + " player=" + o.player() + " amount=" + o.amount() + " listing=" + o.listing()
-                        + " collection=" + o.collection() + " origin=" + o.worker() + " updated=" + java.time.Instant.ofEpochMilli(o.updated()));
-                sync(() -> { sender.sendMessage("Pending auction operations, page " + page + " (up to 50): " + lines.size()); lines.forEach(sender::sendMessage); });
+                List<String[]> lines = new ArrayList<>();
+                for (var o : transactions.pending(50, (page - 1) * 50)) lines.add(new String[] {
+                        "id", String.valueOf(o.id()), "kind", String.valueOf(o.kind()), "state", String.valueOf(o.state()),
+                        "player", String.valueOf(o.player()), "amount", String.valueOf(o.amount()),
+                        "listing", String.valueOf(o.listing()), "collection", String.valueOf(o.collection()),
+                        "origin", String.valueOf(o.worker()), "updated", String.valueOf(java.time.Instant.ofEpochMilli(o.updated()))});
+                sync(() -> {
+                    messages.send(sender, "recovery.header", "page", String.valueOf(page), "count", String.valueOf(lines.size()));
+                    lines.forEach(values -> messages.send(sender, "recovery.entry", values));
+                });
             } catch (Exception e) { logError("listing recovery operations", e); }
         });
     }

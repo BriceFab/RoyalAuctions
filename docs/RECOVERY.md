@@ -119,8 +119,8 @@ follow [the legacy receipt procedure](payment-recovery.md). Back up both journal
 - Do not downgrade over a database with new drafts or pending operations. Stop all instances and
   reconcile first, or restore a coordinated pre-upgrade backup of all affected stores. Restoring
   only auction data can replay obligations already paid in the economy provider.
-- New `exchange.*` messages fall back to bundled defaults without overwriting customized
-  `messages.yml`. Recovery rejection explanations and console diagnostics are English.
+- New `exchange.*` and `recovery.*` messages fall back to bundled defaults without overwriting
+  customized `messages.yml`. Console log lines stay in English.
 
 ## Validation
 
