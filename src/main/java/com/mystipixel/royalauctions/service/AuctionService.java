@@ -7,6 +7,7 @@ import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import com.mystipixel.royalauctions.search.EnchantmentBackfill;
 import com.mystipixel.royalauctions.search.EnchantmentIndex;
+import com.mystipixel.royalauctions.util.Players;
 import com.mystipixel.royalauctions.util.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -102,9 +103,9 @@ public final class AuctionService {
                         Player seller = Bukkit.getPlayer(l.sellerId());
                         if (seller != null) messages.send(seller, "bid.new-bid-seller", "item", l.displayName(), "amount", vault.format(amount), "bidder", name);
                     }
-                    if (bidder.isOnline()) onDone.run();
+                    if (Players.isCurrent(bidder)) onDone.run();
                 });
-            } catch (Exception e) { sync(() -> { failure(bidder, e); if (bidder.isOnline()) onDone.run(); }); }
+            } catch (Exception e) { sync(() -> { failure(bidder, e); if (Players.isCurrent(bidder)) onDone.run(); }); }
         });
     }
 
@@ -120,12 +121,13 @@ public final class AuctionService {
                         Listing l = reserved.listing();
                         econGuard.report(player, name, "buy", l.price(), false, l.sellerId(), l.sellerName(), l.displayName());
                         tell(buyer, "exchange.purchased");
-                        if (config.instantDeliver() && buyer.isOnline())
-                            claimById(buyer, settlementId(l.id()), () -> { if (buyer.isOnline()) onDone.run(); });
-                        else if (buyer.isOnline()) onDone.run();
-                    } else if (buyer.isOnline()) onDone.run();
+                        // after a relog the purchase simply stays in the collection
+                        if (config.instantDeliver() && Players.isCurrent(buyer))
+                            claimById(buyer, settlementId(l.id()), () -> { if (Players.isCurrent(buyer)) onDone.run(); });
+                        else if (Players.isCurrent(buyer)) onDone.run();
+                    } else if (Players.isCurrent(buyer)) onDone.run();
                 });
-            } catch (Exception e) { sync(() -> { failure(buyer, e); if (buyer.isOnline()) onDone.run(); }); }
+            } catch (Exception e) { sync(() -> { failure(buyer, e); if (Players.isCurrent(buyer)) onDone.run(); }); }
         });
     }
     private static UUID settlementId(UUID listing) {
@@ -135,8 +137,8 @@ public final class AuctionService {
     public void cancelListing(Player seller, Listing shown, Runnable onDone) {
         UUID player = seller.getUniqueId();
         async(() -> {
-            try { transactions.cancel(shown.id(), player); sync(() -> { messages.send(seller, "cancel.success"); if (seller.isOnline()) onDone.run(); }); }
-            catch (Exception e) { sync(() -> { failure(seller, e); if (seller.isOnline()) onDone.run(); }); }
+            try { transactions.cancel(shown.id(), player); sync(() -> { messages.send(seller, "cancel.success"); if (Players.isCurrent(seller)) onDone.run(); }); }
+            catch (Exception e) { sync(() -> { failure(seller, e); if (Players.isCurrent(seller)) onDone.run(); }); }
         });
     }
 
@@ -148,7 +150,7 @@ public final class AuctionService {
             try {
                 var r = transactions.reserveCapture(owner, name, bytes, worker);
                 effects.execute(r.operation().id(), () -> {
-                    if (!player.isOnline() || !expected.equals(player.getInventory().getItem(slot))) return false;
+                    if (!Players.isCurrent(player) || !expected.equals(player.getInventory().getItem(slot))) return false;
                     player.getInventory().setItem(slot, null);
                     player.saveData();
                     return true;
@@ -218,7 +220,7 @@ public final class AuctionService {
             try {
                 var r = transactions.reserveClaim(id, owner, name, worker);
                 effects.execute(r.operation().id(), () -> {
-                    if (!player.isOnline()) return false;
+                    if (!Players.isCurrent(player)) return false;
                     ItemStack item = r.item().item();
                     if (!hasRoom(player, item)) { messages.send(player, "collection.full-inventory"); return false; }
                     // On the main thread, capacity cannot change between the check and the add.
@@ -229,9 +231,9 @@ public final class AuctionService {
                 }, outcome -> {
                     result(player, r.operation().id(), outcome);
                     if (outcome == ExternalEffectRunner.Result.COMPLETED) messages.send(player, "collection.claimed", "item", displayNameOf(r.item().item()));
-                    if (player.isOnline()) onDone.run();
+                    if (Players.isCurrent(player)) onDone.run();
                 });
-            } catch (Exception e) { sync(() -> { failure(player, e); if (player.isOnline()) onDone.run(); }); }
+            } catch (Exception e) { sync(() -> { failure(player, e); if (Players.isCurrent(player)) onDone.run(); }); }
         });
     }
     static boolean hasRoom(Player player, ItemStack item) {
@@ -447,7 +449,7 @@ public final class AuctionService {
             try {
                 var earnings = transactions.unclaimedEarnings(seller);
                 if (earnings.isEmpty()) {
-                    sync(() -> { tell(player, "collection.no-earnings"); if (player.isOnline()) onDone.run(); });
+                    sync(() -> { tell(player, "collection.no-earnings"); if (Players.isCurrent(player)) onDone.run(); });
                     return;
                 }
                 var remaining = new java.util.concurrent.atomic.AtomicInteger(earnings.size());
@@ -457,10 +459,10 @@ public final class AuctionService {
                         if (outcome == ExternalEffectRunner.Result.COMPLETED)
                             tell(player, "collection.earnings-claimed", "amount", vault.format(o.amount()), "item", context.itemName());
                         else result(player, o.id(), outcome);
-                        if (remaining.decrementAndGet() == 0 && player.isOnline()) onDone.run();
+                        if (remaining.decrementAndGet() == 0 && Players.isCurrent(player)) onDone.run();
                     }));
                 }
-            } catch (Exception e) { sync(() -> { failure(player, e); if (player.isOnline()) onDone.run(); }); }
+            } catch (Exception e) { sync(() -> { failure(player, e); if (Players.isCurrent(player)) onDone.run(); }); }
         });
     }
 
