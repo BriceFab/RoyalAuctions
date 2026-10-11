@@ -13,6 +13,7 @@ import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import com.mystipixel.royalauctions.search.SearchTerms;
 import com.mystipixel.royalauctions.service.AuctionService;
+import com.mystipixel.royalauctions.util.Players;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryType;
@@ -268,8 +269,8 @@ public final class GuiManager {
             if (createSessions.get(uuid) != s) return;
             if (listed) {
                 createSessions.remove(uuid);
-                if (player.isOnline()) openListings(player);
-            } else if (player.isOnline()) openCreate(player);
+                if (Players.isCurrent(player)) openListings(player);
+            } else if (Players.isCurrent(player)) openCreate(player);
         });
     }
 
@@ -297,7 +298,7 @@ public final class GuiManager {
             s.busy(false);
             if (createSessions.get(player.getUniqueId()) != s) return; // Stored in collection on close/quit.
             if (id != null) { s.collectionId(id); s.item(expected); }
-            if (player.isOnline()) openCreate(player);
+            if (Players.isCurrent(player)) openCreate(player);
         });
     }
     public void removeCreateItem(Player player) {
@@ -305,7 +306,7 @@ public final class GuiManager {
         if (s == null || s.busy() || s.collectionId() == null) return;
         UUID id = s.collectionId();
         s.collectionId(null); s.item(null);
-        service.claimById(player, id, () -> { if (player.isOnline()) openCreate(player); });
+        service.claimById(player, id, () -> { if (Players.isCurrent(player)) openCreate(player); });
     }
     public void endCreateSession(Player player, boolean refund) {
         CreateSession s = createSessions.remove(player.getUniqueId());
@@ -379,7 +380,7 @@ public final class GuiManager {
     // After a null answer: the player may have quit, died, opened another menu or started a newer
     // prompt, and none of those should be covered by our menu.
     private boolean canReopen(Player player) {
-        if (!player.isOnline() || player.isDead() || textInput.isWaiting(player)) {
+        if (!Players.isCurrent(player) || player.isDead() || textInput.isWaiting(player)) {
             return false;
         }
         InventoryType top = player.getOpenInventory().getTopInventory().getType();
@@ -397,7 +398,7 @@ public final class GuiManager {
     }
 
     private boolean current(Player player, int ticket) {
-        return player.isOnline() && navigation.getOrDefault(player.getUniqueId(), 0) == ticket;
+        return Players.isCurrent(player) && navigation.getOrDefault(player.getUniqueId(), 0) == ticket;
     }
 
     // Accepts k/m/b/t shorthand ("5k", "50m", "1.5b") and commas.
