@@ -140,7 +140,8 @@ public final class BrowseGui extends AuctionGui {
         placeholders.put("pages", String.valueOf(pages));
         placeholders.put("search", search == null ? manager.t("none") : search);
         placeholders.put("sort", prettySort());
-        placeholders.put("tier", tier == null ? "&f" + manager.t("no-filter") : manager.tiers().displayOf(tier));
+        placeholders.put("tier", tier == null ? manager.t("format.filter", "label", manager.t("no-filter"))
+                : manager.tiers().displayOf(tier));
         placeholders.put("type", manager.t(typeFilter.key));
 
         Map<String, List<String>> lists = new HashMap<>();
@@ -169,9 +170,10 @@ public final class BrowseGui extends AuctionGui {
         ph.put("starting_price", GuiUtil.comma(listing.price()));
         ph.put("bids", String.valueOf(listing.bidCount()));
         ph.put("top_bidder", listing.topBidderName() == null ? manager.t("none") : listing.topBidderName());
-        ph.put("ends_in", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
+        ph.put("ends_in", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
         ph.put("bid_label", manager.t(listing.hasBids() ? "label.current-bid" : "label.starting-bid"));
-        ph.put("tier", listing.tier() == null ? "&7" + manager.t("none") : manager.tiers().displayOf(listing.tier()));
+        ph.put("tier", listing.tier() == null ? manager.t("format.no-tier", "label", manager.t("none"))
+                : manager.tiers().displayOf(listing.tier()));
         ph.put("click_hint", manager.t(own ? "own-listing-browse"
                 : (listing.isAuction() ? "click-bid-browse" : "click-purchase")));
 
@@ -254,7 +256,7 @@ public final class BrowseGui extends AuctionGui {
             return out;
         }
         int current = tierIndex(tiers);
-        out.add(marked(current == 0, "&f" + manager.t("no-filter")));
+        out.add(marked(current == 0, manager.t("format.filter", "label", manager.t("no-filter"))));
         for (int i = 0; i < tiers.size(); i++) {
             out.add(marked(current == i + 1, tiers.get(i).displayName()));
         }
@@ -264,13 +266,14 @@ public final class BrowseGui extends AuctionGui {
     private List<String> typeList() {
         List<String> out = new ArrayList<>();
         for (TypeFilter f : TypeFilter.values()) {
-            out.add(marked(f == typeFilter, "&f" + manager.t(f.key)));
+            out.add(marked(f == typeFilter, manager.t("format.filter", "label", manager.t(f.key))));
         }
         return out;
     }
 
     private String marked(boolean selected, String label) {
-        return selected ? "&e> " + label : "&8  " + stripColor(label);
+        return selected ? manager.t("format.selected", "label", label)
+                : manager.t("format.unselected", "label", stripColor(label));
     }
 
     private String stripColor(String s) {

@@ -58,7 +58,7 @@ public final class ConfirmBidGui extends AuctionGui {
                     : manager.t("starting-bid", "price", manager.vault().format(listing.price())));
             lore.add(manager.t("your-bid", "price", manager.vault().format(amount)));
             lore.add("");
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));
         }
     }

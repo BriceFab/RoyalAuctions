@@ -35,7 +35,7 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
         template.applyStatic(inventory, Map.of(
                 "type", manager.t(auction ? "type.auction-plain" : "type.bin-plain"),
                 "price", manager.vault().format(s.price()),
-                "duration", s.durationHours() + "h",
+                "duration", manager.t("time.duration", "hours", String.valueOf(s.durationHours())),
                 "fee", manager.vault().format(fee)));
 
         int itemSlot = template.slotOf("item");

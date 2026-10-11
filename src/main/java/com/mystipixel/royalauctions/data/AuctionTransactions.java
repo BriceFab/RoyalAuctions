@@ -21,11 +21,10 @@ public final class AuctionTransactions {
     public record Reservation(Operation operation, Listing listing, CollectionItem item) { }
     public record PaymentContext(UUID buyer, String itemName, boolean auction) { }
     public static final class Rejected extends SQLException {
-        /** Key under {@code exchange.reasons.} for a player-facing reason, or null for staff-only ones. */
+        /** Key under {@code exchange.reasons.} in messages.yml; values fill its placeholders. */
         public final String key;
         public final String[] values;
-        public Rejected(String message) { this(null, message); }
-        public Rejected(String key, String message, String... values) { super(message); this.key = key; this.values = values; }
+        public Rejected(String key, String... values) { super(key); this.key = key; this.values = values; }
     }
     private final DataSource source;
     public AuctionTransactions(DataSource source) { this.source = source; }
@@ -93,7 +92,7 @@ public final class AuctionTransactions {
     }
     private static void lock(Connection c, String resource, UUID operation) throws SQLException {
         try { update(c, "INSERT INTO ra_operation_locks(resource,operation_id) VALUES (?,?)", resource, operation); }
-        catch (SQLException e) { if (duplicate(e)) throw new Rejected("already-pending", "An operation is already pending for this item or auction."); throw e; }
+        catch (SQLException e) { if (duplicate(e)) throw new Rejected("already-pending"); throw e; }
     }
     private static void release(Connection c, UUID operation) throws SQLException {
         update(c, "DELETE FROM ra_operation_locks WHERE operation_id=?", operation);
@@ -117,26 +116,26 @@ public final class AuctionTransactions {
     public PaymentContext paymentContext(UUID listingId) throws SQLException {
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
                 "SELECT buyer_id,display_name,type FROM ra_listings WHERE id=?", listingId); ResultSet rs = ps.executeQuery()) {
-            if (!rs.next()) throw new Rejected("The payment's listing no longer exists.");
+            if (!rs.next()) throw new Rejected("payment-listing-gone");
             return new PaymentContext(uuid(rs.getString("buyer_id")), rs.getString("display_name"), "AUCTION".equals(rs.getString("type")));
         }
     }
     private static Operation get(Connection c, UUID id) throws SQLException {
         try (PreparedStatement ps = statement(c, "SELECT * FROM ra_operations WHERE id=?", id); ResultSet rs = ps.executeQuery()) {
-            if (!rs.next()) throw new Rejected("Unknown operation.");
+            if (!rs.next()) throw new Rejected("unknown-operation");
             return operation(rs);
         }
     }
     private static Listing listing(Connection c, UUID id) throws SQLException {
         try (PreparedStatement ps = statement(c, "SELECT * FROM ra_listings WHERE id=?", id); ResultSet rs = ps.executeQuery()) {
-            if (!rs.next()) throw new Rejected("listing-gone", "This listing no longer exists.");
+            if (!rs.next()) throw new Rejected("listing-gone");
             return AuctionDatabase.mapListing(rs);
         }
     }
     private static CollectionItem item(Connection c, UUID id, UUID owner) throws SQLException {
         try (PreparedStatement ps = statement(c, "SELECT * FROM ra_collection WHERE id=? AND owner_id=?", id, owner);
              ResultSet rs = ps.executeQuery()) {
-            if (!rs.next()) throw new Rejected("collection-gone", "This collection item is no longer available.");
+            if (!rs.next()) throw new Rejected("collection-gone");
             return AuctionDatabase.mapCollection(rs);
         }
     }
@@ -145,7 +144,7 @@ public final class AuctionTransactions {
                 id, owner, ItemSerialization.toBase64(bytes), reason, now);
     }
     private static void validMoney(double amount, boolean zeroAllowed) throws Rejected {
-        if (!Double.isFinite(amount) || amount < 0 || (!zeroAllowed && amount == 0)) throw new Rejected("invalid-amount", "Invalid money amount.");
+        if (!Double.isFinite(amount) || amount < 0 || (!zeroAllowed && amount == 0)) throw new Rejected("invalid-amount");
     }
     private Operation prepared(Kind kind, UUID listing, UUID collection, UUID player, String name,
                                double amount, long expiry, String worker) {
@@ -162,10 +161,10 @@ public final class AuctionTransactions {
             Listing l = listing(c, listingId);
             long now = System.currentTimeMillis();
             if (l.status() != ListingStatus.ACTIVE || !l.isAuction() || l.expiresAt() <= now || l.sellerId().equals(player))
-                throw new Rejected("bid-closed", "This auction is no longer accepting your bid.");
+                throw new Rejected("bid-closed");
             double minimum = l.nextMinBid(increment.applyAsDouble(l.currentBid()));
             if (!Double.isFinite(minimum) || amount < minimum || (l.hasBids() && amount <= l.currentBid()))
-                throw new Rejected("bid-too-low", "The bid must meet the current minimum: " + minimum, "minimum", String.valueOf(minimum));
+                throw new Rejected("bid-too-low", "minimum", String.valueOf(minimum));
             long expiry = antiSnipeMillis > 0 ? Math.max(l.expiresAt(), Math.addExact(now, antiSnipeMillis)) : l.expiresAt();
             Operation o = new Operation(token.id, token.kind, token.state, listingId, null, player, name,
                     amount, expiry, now, now, worker, "");
@@ -181,7 +180,7 @@ public final class AuctionTransactions {
             validMoney(l.price(), false);
             if (l.status() != ListingStatus.ACTIVE || l.isAuction() || l.expiresAt() <= System.currentTimeMillis()
                     || l.sellerId().equals(player) || Double.compare(expectedPrice, l.price()) != 0)
-                throw new Rejected("price-changed", "This purchase is no longer available at that price.");
+                throw new Rejected("price-changed");
             insert(c, o);
             return new Reservation(o, l, null);
         });
@@ -207,18 +206,18 @@ public final class AuctionTransactions {
     }
     public Reservation reserveCreate(Listing l, UUID collection, double fee, int limit, String worker) throws SQLException {
         validMoney(l.price(), false); validMoney(fee, true);
-        if (l.expiresAt() <= System.currentTimeMillis()) throw new Rejected("invalid-duration", "Invalid listing duration.");
+        if (l.expiresAt() <= System.currentTimeMillis()) throw new Rejected("invalid-duration");
         Operation o = prepared(Kind.CREATE, l.id(), collection, l.sellerId(), l.sellerName(), fee, 0, worker);
         return transaction(c -> {
             lock(c, "seller/" + l.sellerId(), o.id);
             lock(c, "collection/" + collection, o.id);
             lock(c, "listing/" + l.id(), o.id);
             CollectionItem ci = item(c, collection, l.sellerId());
-            if (!Arrays.equals(ci.itemData(), l.itemData())) throw new Rejected("item-changed", "The selected item changed.");
+            if (!Arrays.equals(ci.itemData(), l.itemData())) throw new Rejected("item-changed");
             if (limit >= 0) {
                 try (PreparedStatement ps = statement(c, "SELECT COUNT(*) FROM ra_listings WHERE seller_id=? AND status IN ('ACTIVE','DRAFT')", l.sellerId());
                      ResultSet rs = ps.executeQuery()) {
-                    rs.next(); if (rs.getInt(1) >= limit) throw new Rejected("listing-limit", "You have reached your listing limit.");
+                    rs.next(); if (rs.getInt(1) >= limit) throw new Rejected("listing-limit");
                 }
             }
             AuctionDatabase.insertListing(c, l, ListingStatus.DRAFT);
@@ -323,7 +322,7 @@ public final class AuctionTransactions {
         return transaction(c -> {
             UUID id = UUID.randomUUID(); lock(c, "listing/" + listingId, id);
             Listing l = listing(c, listingId);
-            if (l.status() != ListingStatus.ACTIVE || !l.sellerId().equals(seller) || l.hasBids()) throw new Rejected("cannot-cancel", "This listing cannot be cancelled.");
+            if (l.status() != ListingStatus.ACTIVE || !l.sellerId().equals(seller) || l.hasBids()) throw new Rejected("cannot-cancel");
             update(c, "UPDATE ra_listings SET status='CANCELLED' WHERE id=?", l.id());
             addItem(c, key("settlement/" + l.id()), seller, l.itemData(), CollectionItem.Reason.CANCELLED, System.currentTimeMillis());
             release(c, id); return true;
@@ -380,11 +379,11 @@ public final class AuctionTransactions {
     public void resolve(UUID id, boolean applied, String operator) throws SQLException {
         transaction(c -> {
             if (update(c, "UPDATE ra_operations SET updated_at=updated_at+1 WHERE id=? AND state='APPLYING' AND updated_at<?",
-                    id, System.currentTimeMillis() - 120_000) != 1) throw new Rejected("Only interrupted APPLYING operations older than two minutes can be reconciled.");
+                    id, System.currentTimeMillis() - 120_000) != 1) throw new Rejected("not-interrupted");
             Operation o = get(c, id);
             try (PreparedStatement ps = statement(c, "SELECT heartbeat FROM ra_workers WHERE id=?", o.worker); ResultSet rs = ps.executeQuery()) {
                 if (rs.next() && rs.getLong(1) >= System.currentTimeMillis() - 120_000)
-                    throw new Rejected("The originating server is still active. Stop that process before reconciliation.");
+                    throw new Rejected("origin-active");
             }
             // Keep the payout reason in note; the separate immutable audit records the operator decision.
             update(c, "UPDATE ra_operations SET state=?,updated_at=? WHERE id=?", applied ? State.APPLIED : State.FAILED, System.currentTimeMillis(), id);

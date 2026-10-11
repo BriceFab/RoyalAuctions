@@ -9,11 +9,16 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** Loads messages.yml and renders '&'-coloured, placeholder-filled chat components. */
+/**
+ * Loads messages.yml and renders '&'-coloured, placeholder-filled chat components. The jar's copy
+ * backs every key missing from the server's file; the code carries no text of its own.
+ */
 public final class MessageManager {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z0-9_-]+)}");
@@ -33,7 +38,7 @@ public final class MessageManager {
             plugin.saveResource("messages.yml", false);
         }
         this.messages = YamlConfiguration.loadConfiguration(file);
-        // New recovery messages work on upgrade without overwriting the server's translations.
+        // Keys added in an update work without rewriting the server's file.
         try (var stream = plugin.getResource("messages.yml")) {
             if (stream != null) messages.setDefaults(YamlConfiguration.loadConfiguration(
                     new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8)));
@@ -43,9 +48,6 @@ public final class MessageManager {
 
     private String raw(String path) {
         String value = messages.getString(path);
-        if (value == null && path.equals("payment-pending")) {
-            return "&eAn auction payment is on hold. Staff can check its status; do not repeat the transaction.";
-        }
         return value == null ? path : value;
     }
 
@@ -75,6 +77,34 @@ public final class MessageManager {
             value = value.replace("{" + kv[i] + "}", kv[i + 1]);
         }
         return value;
+    }
+
+    /** A list key as '&' text, one entry per line, placeholders filled as in {@link #text}. */
+    public List<String> lines(String path, String... kv) {
+        List<String> out = new ArrayList<>();
+        for (String line : messages.getStringList(path)) {
+            String value = line.replace("{prefix}", prefix);
+            for (int i = 0; i + 1 < kv.length; i += 2) {
+                value = value.replace("{" + kv[i] + "}", kv[i + 1]);
+            }
+            out.add(value);
+        }
+        return out;
+    }
+
+    /** Each line of a list key as its own chat message. */
+    public void sendLines(CommandSender to, String path, String... kv) {
+        for (String line : lines(path, kv)) {
+            to.sendMessage(Text.chat(line));
+        }
+    }
+
+    /**
+     * Like {@link #send(CommandSender, String, String...)}, but the values keep their own colour
+     * codes. Only for values from config (category and tier names), never for player input.
+     */
+    public void sendStyled(CommandSender to, String path, String... kv) {
+        to.sendMessage(Text.chat(text(path, kv)));
     }
 
     public void send(CommandSender to, String path) {

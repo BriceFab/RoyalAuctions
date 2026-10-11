@@ -466,6 +466,28 @@ public final class GuiManager {
         return messages.text("gui." + key, kv);
     }
 
+    /** Remaining time, e.g. "1d 3h", "45m 2s", in the gui.time formats. */
+    public String timeLeft(long millis) {
+        if (millis <= 0) {
+            return t("time.expired");
+        }
+        long seconds = millis / 1000;
+        String days = String.valueOf(seconds / 86400);
+        String hours = String.valueOf((seconds % 86400) / 3600);
+        String minutes = String.valueOf((seconds % 3600) / 60);
+        String secs = String.valueOf(seconds % 60);
+        if (seconds >= 86400) {
+            return t("time.days", "days", days, "hours", hours);
+        }
+        if (seconds >= 3600) {
+            return t("time.hours", "hours", hours, "minutes", minutes);
+        }
+        if (seconds >= 60) {
+            return t("time.minutes", "minutes", minutes, "seconds", secs);
+        }
+        return t("time.seconds", "seconds", secs);
+    }
+
     private void playOpen(Player player, String menuId) {
         MenuTemplate template = menus.get(menuId);
         if (template != null) {

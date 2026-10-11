@@ -32,7 +32,7 @@ public final class CreateAuctionGui extends CreateFlowGui {
         Map<String, String> placeholders = Map.of(
                 "price", s != null && s.hasPrice() ? manager.vault().format(s.price()) : manager.t("not-set"),
                 "duration", durationLabel(s == null ? manager.config().defaultDurationHours() : s.durationHours()),
-                "type_material", auction ? "GOLD_NUGGET" : "EMERALD",
+                "type_material", template.text(auction ? "type-materials.auction" : "type-materials.bin"),
                 "type_name", manager.t(auction ? "type.auction" : "type.bin"),
                 "type_desc", manager.t(auction ? "type.auction-desc" : "type.bin-desc"),
                 "toggle_hint", manager.t("type-toggle", "type", manager.t(auction ? "type.bin" : "type.auction")));
@@ -51,7 +51,7 @@ public final class CreateAuctionGui extends CreateFlowGui {
                 .filter(d -> d.hours() == hours)
                 .map(PluginConfig.DurationOption::label)
                 .findFirst()
-                .orElse(hours + "h");
+                .orElse(manager.t("time.duration", "hours", String.valueOf(hours)));
     }
 
     @Override

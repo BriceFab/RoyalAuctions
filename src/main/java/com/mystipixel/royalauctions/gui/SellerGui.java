@@ -77,7 +77,7 @@ public final class SellerGui extends AuctionGui {
                 lore.add(manager.t("bin-price-line", "price", manager.vault().format(listing.price())));
             }
             lore.add("");
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             lore.add("");
             lore.add(listing.sellerId().equals(player.getUniqueId())
                     ? manager.t("own-listing")
