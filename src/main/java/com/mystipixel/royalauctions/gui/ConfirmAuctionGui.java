@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Confirm Auction — layout from gui/confirm-auction.yml. */
+/** Confirm Auction menu, laid out by gui/confirm-auction.yml. */
 public final class ConfirmAuctionGui extends CreateFlowGui {
 
     private final MenuTemplate template;
@@ -64,7 +64,6 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
             }
             case BACK, CANCEL -> manager.openCreate(player);
             default -> {
-                // decorative
             }
         }
     }

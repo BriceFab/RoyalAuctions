@@ -15,13 +15,8 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 /**
- * The tiers the browser's tier filter cycles through, and the lookup that decides an item's tier.
- *
- * <p>Tiers ARE eco's rarities — discovered straight from {@link RarityRegistry} (i.e. from
- * {@code plugins/EcoItems/rarities/}), so adding a rarity there makes it filterable here with no
- * further config. The {@code tiers:} section only <em>curates</em> that list: cycle order, per-tier
- * icon, and which ones to hide. Nothing is hardcoded, so {@code special} / {@code very_special}
- * (or your {@code test_*} rarities) work the moment the rarity file exists.
+ * The tiers the browser filter cycles through, and an item's tier. Tiers are eco's rarities from
+ * {@link RarityRegistry}; the {@code tiers:} section only sets order, icons and which to hide.
  */
 public final class TierManager {
 
@@ -38,7 +33,6 @@ public final class TierManager {
         this.logger = logger;
     }
 
-    /** Swap in a freshly-scanned registry (used by /ah reload so new rarity files are picked up). */
     public void rebind(RarityRegistry rarities) {
         this.rarities = rarities;
     }
@@ -55,13 +49,12 @@ public final class TierManager {
         List<String> hidden = section == null ? List.of() : lower(section.getStringList("hide"));
         ConfigurationSection icons = section == null ? null : section.getConfigurationSection("icons");
 
-        // Everything eco knows about, keyed by id.
         Map<String, RarityRegistry.Rarity> discovered = new LinkedHashMap<>();
         for (RarityRegistry.Rarity r : rarities.rarities()) {
             discovered.put(r.id(), r);
         }
 
-        // Configured order first (only for rarities that actually exist), then anything left over.
+        // Configured order first (existing rarities only), then anything left over.
         List<String> ids = new ArrayList<>();
         for (String id : lower(order)) {
             if (discovered.containsKey(id) && !ids.contains(id)) {
@@ -89,7 +82,6 @@ public final class TierManager {
         logger.info("Tier filter: " + ordered.size() + " tiers (" + summary() + ").");
     }
 
-    /** The tiers the filter cycles through, in order. */
     public List<Tier> tiers() {
         return List.copyOf(ordered);
     }
@@ -110,17 +102,13 @@ public final class TierManager {
         return null;
     }
 
-    /** Display text for a tier id (falls back to the raw id for tiers no longer configured). */
+    /** Falls back to the raw id for tiers no longer configured. */
     public String displayOf(String id) {
         Tier t = byId(id);
         return t == null ? id : t.displayName();
     }
 
-    /**
-     * The tier of an item: its eco rarity, looked up by the item's full eco id
-     * ({@code talismans:rarity_test_charm}). Null for vanilla items and anything untiered.
-     * Resolved once, when the listing is created.
-     */
+    /** An item's eco rarity, or null for vanilla and untiered items. Resolved once, at listing time. */
     public String tierOf(ItemStack item) {
         if (item == null || !rarities.isPresent()) {
             return null;

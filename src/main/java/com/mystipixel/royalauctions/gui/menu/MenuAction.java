@@ -4,20 +4,16 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Every click action a configured GUI button can carry. In the EcoMenus-style configs these are
- * authored as effect ids under {@code left-click:} / {@code right-click:}, e.g.
+ * Click actions a GUI button can carry, authored as effect ids in the menu files:
  * <pre>
  * left-click:
  *   - id: ah_search
  * </pre>
- * {@link #fromEffectId} maps those ids onto this enum, which the GUI classes switch on.
  */
 public enum MenuAction {
     NONE,
-    // Hub
     OPEN_HUB,
     OPEN_BIDS,
-    // Browse
     SEARCH,
     SORT,
     // Filters step through their list: prev = up, next = down (bind to left/right click in config).
@@ -33,7 +29,6 @@ public enum MenuAction {
     OPEN_COLLECTION,
     OPEN_BROWSE,
     CLOSE,
-    // Create flow
     SET_PRICE,
     SET_DURATION,
     TOGGLE_TYPE,
@@ -42,17 +37,13 @@ public enum MenuAction {
     CONFIRM,
     CANCEL,
     BACK,
-    // Buying / bidding
     CONFIRM_PURCHASE,
     BID_MIN,
     BID_CUSTOM,
-    // Confirmation gates for the irreversible actions
     CONFIRM_BID,
     CONFIRM_CANCEL,
-    // Collection
     CLAIM_EARNINGS;
 
-    /** Effect id (as authored in the menu YAML) → action. */
     private static final Map<String, MenuAction> BY_EFFECT_ID = Map.ofEntries(
             Map.entry("ah_hub", OPEN_HUB),
             Map.entry("ah_bids", OPEN_BIDS),
@@ -85,7 +76,7 @@ public enum MenuAction {
             Map.entry("ah_claim_earnings", CLAIM_EARNINGS),
             Map.entry("close_inventory", CLOSE));
 
-    /** Resolve an effect id from a menu config; unknown ids are inert rather than fatal. */
+    /** Unknown ids resolve to NONE rather than failing. */
     public static MenuAction fromEffectId(String id) {
         if (id == null) {
             return NONE;

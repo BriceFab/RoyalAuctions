@@ -7,8 +7,8 @@ import org.bukkit.inventory.InventoryHolder;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Base for every RoyalAuctions menu. Using the GUI object itself as the {@link InventoryHolder}
- * lets the single listener recognise our menus and route clicks without tracking open inventories.
+ * Base for every menu. The GUI object is the {@link InventoryHolder}, so one listener can recognise
+ * our menus without tracking open inventories.
  */
 public abstract class AuctionGui implements InventoryHolder {
 
@@ -20,13 +20,12 @@ public abstract class AuctionGui implements InventoryHolder {
         return inventory;
     }
 
-    /** Handle a click. The event is already cancelled; most menus only act on top-inventory clicks. */
+    /** The event is already cancelled; most menus only act on top-inventory clicks. */
     public abstract void onClick(InventoryClickEvent event);
 
     public void onClose(InventoryCloseEvent event) {
     }
 
-    /** True if the click landed in this menu (the top inventory) rather than the player's inventory. */
     protected boolean isTopClick(InventoryClickEvent event) {
         return inventory.equals(event.getClickedInventory());
     }

@@ -1,4 +1,4 @@
-# A single seller's auctions — the /ah <username> view.
+# A single seller's auctions: the /ah <username> view.
 # Placeholders: %seller% %count% %page% %pages%
 
 title: "&8Auctions &7» &f%seller%"

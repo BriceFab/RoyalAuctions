@@ -39,11 +39,8 @@ public final class GuiManager {
     private final SearchTerms searchTerms = new SearchTerms();
 
     private final Map<UUID, CreateSession> createSessions = new ConcurrentHashMap<>();
-    /**
-     * Per-player navigation counter. Every menu request takes a ticket, and a menu that loads its
-     * data asynchronously only opens if no newer request came in meanwhile. Otherwise a slow load
-     * (say, a double-clicked hub button) could pop up over the create screen or a confirmation.
-     */
+    // Per-player navigation counter: an async-loaded menu only opens if no newer request came in,
+    // so a slow load cannot pop up over the create screen or a confirmation.
     private final Map<UUID, Integer> navigation = new ConcurrentHashMap<>();
 
     public GuiManager(JavaPlugin plugin, AuctionService service, PluginConfig config, CategoryManager categories,
@@ -60,9 +57,6 @@ public final class GuiManager {
         this.textInput = textInput;
     }
 
-    // ------------------------------------------------------------------ hub / bids / seller view
-
-    /** The {@code /ah} landing menu. Loads the counts the hub icons display, then opens. */
     public void openHub(Player player) {
         UUID uuid = player.getUniqueId();
         int ticket = ticket(player);
@@ -95,7 +89,6 @@ public final class GuiManager {
         });
     }
 
-    /** {@code /ah <username>} — that seller's active auctions. */
     public void openSeller(Player player, UUID sellerId, String sellerName) {
         int ticket = ticket(player);
         service.loadSellerListings(sellerId, listings -> {
@@ -107,15 +100,12 @@ public final class GuiManager {
         });
     }
 
-    // ------------------------------------------------------------------ browsing / buying / bidding
-
     public void openBrowse(Player player) {
         openBrowse(player, null, null, config.defaultSort(), 0);
     }
 
     public void openBrowse(Player player, String category, String search, SortOrder sort, int page) {
-        // Open first, then fill: the page is fetched asynchronously, and the menu tracks whether it is
-        // still the open inventory before drawing into it.
+        // Open first, then fill: the page arrives async and the menu checks it is still open first.
         ticket(player);
         BrowseGui gui = new BrowseGui(this, player, category, search, sort);
         player.openInventory(gui.getInventory());
@@ -134,11 +124,7 @@ public final class GuiManager {
         playOpen(player, "confirm-purchase");
     }
 
-    /**
-     * Gate a bid behind a confirmation. A bid takes the money immediately (it's held until you're
-     * outbid or the auction ends), so a stray click on "Bid" is a real cost — hence the same
-     * treatment Buy-It-Now already had. Falls straight through when confirmations.bid is off.
-     */
+    /** Gates a bid (which takes the money at once) behind a confirmation, unless confirmations.bid is off. */
     public void confirmBid(Player player, Listing listing, double amount,
                            String category, String search, SortOrder sort, int page) {
         ticket(player);
@@ -151,7 +137,6 @@ public final class GuiManager {
         playOpen(player, "confirm-bid");
     }
 
-    /** Gate a cancellation behind a confirmation. Falls through when confirmations.cancel is off. */
     public void confirmCancel(Player player, Listing listing, int page) {
         ticket(player);
         if (!config.confirmCancel()) {
@@ -174,10 +159,7 @@ public final class GuiManager {
         openCollection(player, 0);
     }
 
-    /**
-     * Back from a bid confirmation: re-read the listing, so the bid screen offers the minimum bid
-     * as it is now rather than the one captured when the confirmation opened.
-     */
+    // Re-reads the listing so the bid screen offers the current minimum bid, not the one captured earlier.
     public void reopenBid(Player player, Listing shown, String category, String search, SortOrder sort, int page) {
         int ticket = ticket(player);
         service.loadListing(shown.id(), fresh -> {
@@ -225,14 +207,11 @@ public final class GuiManager {
         });
     }
 
-    // ------------------------------------------------------------------ create-auction flow
-
     public CreateSession session(UUID uuid) {
         return createSessions.get(uuid);
     }
 
     public void openCreate(Player player) {
-        // Every way into the create flow (hub, browse, /ah sell) comes through here.
         if (!player.hasPermission("royalauctions.sell")) {
             endCreateSession(player, true);
             messages.send(player, "general.no-permission");
@@ -299,7 +278,7 @@ public final class GuiManager {
         openBrowse(player);
     }
 
-    /** All create items are already journalled in collection; shutdown never copies them again. */
+    // Create items are already journalled in collection; shutdown never copies them again.
     public void clearCreateSessions() { createSessions.clear(); }
 
     public void closeMenus() {
@@ -391,8 +370,7 @@ public final class GuiManager {
                 messages.send(player, "general.invalid-number");
                 openBrowse(player, category, search, sort, page);
             } else {
-                // A typed amount is the easiest place to fat-finger an extra zero, so it goes
-                // through the same confirmation as the one-click bid.
+                // A typed amount is easy to fat-finger, so it gets the same confirmation.
                 confirmBid(player, listing, amount, category, search, sort, page);
             }
         });
@@ -408,8 +386,6 @@ public final class GuiManager {
         return top == InventoryType.CRAFTING || top == InventoryType.CREATIVE;
     }
 
-    // ------------------------------------------------------------------ housekeeping
-
     public void handleQuit(Player player) {
         // Persisted collection and pending operations survive the session. No offline inventory edits.
         createSessions.remove(player.getUniqueId());
@@ -420,12 +396,11 @@ public final class GuiManager {
         return navigation.merge(player.getUniqueId(), 1, Integer::sum);
     }
 
-    /** True if the player is online and has not asked for another menu since taking {@code ticket}. */
     private boolean current(Player player, int ticket) {
         return player.isOnline() && navigation.getOrDefault(player.getUniqueId(), 0) == ticket;
     }
 
-    /** Parse a positive amount, accepting k/m/b/t shorthand (e.g. "5k", "50m", "1.5b") and commas. */
+    // Accepts k/m/b/t shorthand ("5k", "50m", "1.5b") and commas.
     private Double parsePositive(String input) {
         if (input == null) {
             return null;
@@ -457,8 +432,6 @@ public final class GuiManager {
         }
     }
 
-    // ------------------------------------------------------------------ accessors
-
     public AuctionService service() {
         return service;
     }
@@ -483,22 +456,16 @@ public final class GuiManager {
         return vault;
     }
 
-    /** Menu text from {@code messages.yml} ({@code gui.<key>}), placeholders filled in. */
     /** Translated item names and enchantment names that searches also match. */
     public SearchTerms searchTerms() {
         return searchTerms;
     }
 
+    /** Menu text from {@code messages.yml} ({@code gui.<key>}), placeholders filled in. */
     public String t(String key, String... kv) {
         return messages.text("gui." + key, kv);
     }
 
-    /**
-     * Play a menu's configured open sound.
-     *
-     * <p>MenuTemplate has always been able to do this, but nothing called it — so the sounds blocks in
-     * the menu files were decorative and no menu in this plugin ever made a noise.
-     */
     private void playOpen(Player player, String menuId) {
         MenuTemplate template = menus.get(menuId);
         if (template != null) {

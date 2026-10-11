@@ -23,7 +23,6 @@ public final class AuctionTransactions {
     public static final class Rejected extends SQLException {
         /** Key under {@code exchange.reasons.} for a player-facing reason, or null for staff-only ones. */
         public final String key;
-        /** Placeholder name/value pairs for the reason's text. */
         public final String[] values;
         public Rejected(String message) { this(null, message); }
         public Rejected(String key, String message, String... values) { super(message); this.key = key; this.values = values; }
@@ -85,11 +84,7 @@ public final class AuctionTransactions {
     }
     private static UUID uuid(String s) { return s == null ? null : UUID.fromString(s); }
     private static UUID key(String text) { return UUID.nameUUIDFromBytes(text.getBytes(StandardCharsets.UTF_8)); }
-    /**
-     * A primary-key or unique clash. SQLite reports every constraint failure (NOT NULL, CHECK, a
-     * trigger's abort, ...) as code 19, so only its key-clash messages count; anything else is a
-     * real error and must not be mistaken for "already locked".
-     */
+    // SQLite reports every constraint failure as code 19, so only its key-clash messages count.
     static boolean duplicate(SQLException e) {
         if (e.getErrorCode() == 1062 || "23505".equals(e.getSQLState())) return true;
         String message = e.getMessage();
@@ -347,7 +342,6 @@ public final class AuctionTransactions {
             List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;
         }
     }
-    /** Sale payouts still waiting for {@code seller} to collect them. */
     public List<Operation> unclaimedEarnings(UUID seller) throws SQLException {
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
                 "SELECT * FROM ra_operations WHERE state='READY' AND kind='PAYOUT' AND note='SOLD' AND player_id=? "

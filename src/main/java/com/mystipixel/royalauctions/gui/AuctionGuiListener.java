@@ -8,7 +8,6 @@ import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.InventoryHolder;
 
-/** Guards our menus (no item theft), routes clicks, and cleans up create sessions on close/quit. */
 public final class AuctionGuiListener implements Listener {
 
     private final GuiManager manager;
@@ -23,9 +22,8 @@ public final class AuctionGuiListener implements Listener {
         if (!(holder instanceof AuctionGui gui)) {
             return;
         }
-        // Cancel every interaction while one of our menus is on top so items can't be moved out or in.
-        // We still forward the click (including player-inventory clicks) so the create screen can
-        // handle depositing an item; each menu decides what to act on via isTopClick().
+        // Cancel everything, but still forward player-inventory clicks so the create screen can take
+        // a deposit; each menu decides what to act on via isTopClick().
         event.setCancelled(true);
         gui.onClick(event);
     }

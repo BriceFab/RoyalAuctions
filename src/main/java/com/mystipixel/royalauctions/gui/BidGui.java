@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Place Bid — layout from gui/bid.yml. */
+/** Place Bid menu, laid out by gui/bid.yml. */
 public final class BidGui extends AuctionGui {
 
     private final GuiManager manager;
@@ -73,7 +73,6 @@ public final class BidGui extends AuctionGui {
             case BID_CUSTOM -> manager.beginBidInput(player, listing, category, search, sort, page);
             case OPEN_BROWSE, BACK -> manager.openBrowse(player, category, search, sort, page);
             default -> {
-                // decorative
             }
         }
     }

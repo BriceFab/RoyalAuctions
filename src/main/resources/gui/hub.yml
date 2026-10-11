@@ -1,4 +1,4 @@
-# Auction House — the landing menu opened by /ah
+# Auction House: the landing menu opened by /ah
 #
 # EcoMenus-style layout:
 #   mask.pattern  - one line per row, 9 chars each. 1-9 = mask.items filler, 0/letters = dynamic region.

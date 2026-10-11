@@ -1,11 +1,6 @@
-# =====================================================================
-#  RoyalAuctions - Hypixel-style Auction House
-# =====================================================================
+# RoyalAuctions configuration
 
-# ---------------------------------------------------------------------
-# Storage
-#   type: SQLITE (single server, zero setup) or MYSQL (network / shared)
-# ---------------------------------------------------------------------
+# Storage type: SQLITE (single server, no setup) or MYSQL (network / shared).
 storage:
   type: SQLITE
   # Only used when type: MYSQL
@@ -21,14 +16,8 @@ storage:
   # SQLite file name (stored in the plugin folder). Only used when type: SQLITE.
   sqlite-file: auctions.db
 
-# ---------------------------------------------------------------------
-# Listing rules
-# ---------------------------------------------------------------------
+# Listing rules. Listings are created in the GUI: /ah, then "Create Auction".
 listings:
-  # Auctions/listings are created entirely through the GUI (open with /ah, click
-  # "Create Auction"). The seller deposits the item, sets a price by typing it in
-  # a text box, picks a duration, toggles Buy-It-Now vs Auction, then confirms.
-
   # Selectable listing durations shown on the "Auction Duration" screen.
   durations:
     - label: "1 Hour"
@@ -54,163 +43,87 @@ listings:
   # The permission royalauctions.limit.<n> overrides this (the highest one a
   # player has wins), and royalauctions.limit.unlimited removes the cap.
   max-per-player: 7
-  # Price bounds (in Vault currency). max-price: -1 disables the upper bound.
+  # Lowest listing price, in Vault currency.
   min-price: 1.0
 
-  # Which categories may be LISTED. Empty = anything can be sold, which is the
-  # default so a fresh install does not silently refuse half the game.
-  #
-  # Naming categories rather than materials means there is one place that decides
-  # what an item is: the bucket a buyer browses under is the same bucket the sell
-  # rule reads, so they cannot drift apart, and a new custom item is classified
-  # once rather than in two lists that slowly disagree.
-  #
-  # Anything left out is refused with the category-not-allowed message, which
-  # should say where the item DOES belong.
+  # Categories that may be listed (category ids, see categories/). Empty = anything
+  # can be sold. Anything left out is refused with the category-not-allowed message,
+  # which should say where the item does belong.
   sellable-categories: []
+  # Highest listing price; -1 disables the upper bound.
   max-price: -1
-  # Listing fee charged to the seller when posting.
+  # Listing fee charged to the seller when posting. Non-refundable.
   #   percent: fraction of the sale price (0.02 = 2%)
   #   minimum: floor for the fee regardless of percent
-  # The fee is non-refundable and is taken immediately on listing.
   fee:
     percent: 0.02
     minimum: 5.0
-  # If true, buying an item deposits it straight into the buyer's inventory
-  # when there is room, only overflowing to the collection when full.
-  # If false, all purchases go to the collection to be claimed manually.
+  # true: purchases go straight into the buyer's inventory when there is room,
+  # overflowing to the collection. false: all purchases go to the collection.
   instant-deliver-purchases: true
 
-  # If true, money from a sale is not paid to the seller right away: it waits
-  # in the Collection menu (Earnings button) until they collect it. Useful when
-  # money should only reach a balance on purpose, e.g. with a bounty plugin.
-  # Bid refunds are still paid at once. Turning this off pays out what waits.
+  # true: sale money waits in the Collection menu (Earnings button) until the
+  # seller collects it, instead of being paid at once. Bid refunds are still paid
+  # at once. Turning this off pays out what is waiting.
   manual-earnings-collection: false
 
-# ---------------------------------------------------------------------
-# Bidding (AUCTION listings)
-# ---------------------------------------------------------------------
+# Bidding (AUCTION listings). Outbid players are refunded automatically.
 bidding:
   # Each new bid must beat the current bid by at least the larger of a flat
   # amount and a percentage of the current bid.
   min-increment: 10.0
   increment-percent: 0.05
-  # When someone is outbid their money is refunded automatically. When an
-  # auction ends the highest bidder wins and the seller is paid the winning bid.
 
-  # Anti-snipe: a bid landing in the final N seconds pushes the end time back
-  # out to N seconds away, so a last-second bid can always be answered instead
-  # of silently winning. Extensions repeat as long as bids keep coming, which
-  # is the point - the auction ends when bidders stop, not when a timer says.
-  # 0 disables the extension entirely.
+  # A bid in the final N seconds pushes the end time back out to N seconds away,
+  # so a last-second bid can always be answered. 0 disables it.
   anti-snipe-seconds: 60
 
-# ---------------------------------------------------------------------
-# GUI / Menus
-#
-# Every menu — its title, size, filler, sounds, and each button's slot,
-# material, name, lore and click action — is configured per-menu in the
-# gui/ folder:
-#   gui/browse.yml           the Auction Browser
-#   gui/create.yml           the Create Auction screen
-#   gui/duration.yml         the Auction Duration picker
-#   gui/confirm-purchase.yml Buy-It-Now confirmation
-#   gui/confirm-auction.yml  final auction confirmation
-#   gui/bid.yml              the Place Bid screen
-#   gui/collection.yml       claim purchases / returned items
-#   gui/manage.yml           your active listings
-# Edit those files and run /ah reload to apply changes.
-# ---------------------------------------------------------------------
+# Menus are configured per file in gui/ (title, size, filler, sounds, and each
+# button's slot, item, lore and click action). Run /ah reload after editing.
 
-# ---------------------------------------------------------------------
-# Categories (Hypixel-style tabs)
-#
-# Items are tested against each category in ascending `priority` order and
-# placed in the FIRST one that matches. Always keep a final catch-all
-# category (a `misc` with match.any: true) so nothing is uncategorised.
-#
-# Match rules (any rule that is present must be satisfied; a category with
-# multiple rule types matches if ANY rule type matches):
-#   eco-namespaces   : list of eco plugin namespaces the item belongs to,
-#                      e.g. [talismans], [reforges], [ecoarmor], [ecoitems]
+# How categories resolve, for every item:
+#   1. match.items: an exact pin ("ecoitems:brazen_sword", "minecraft:trident").
+#      Wins over every other rule, in any category, at any priority.
+#   2. match.eco-namespaces: a whole eco plugin (talismans, ecoarmor, ...).
+#   3. match.materials / material-suffixes / material-prefixes / tags: the item's
+#      base material, only a guess for custom items.
+#   4. match.any: true, the catch-all.
+# /ah category (holding an item) shows where it lands and which rule decided it.
+# On startup, eco items that only hit the catch-all are logged so you can pin them.
+category-options:
+  # true  = only items pinned via match.items get a category; everything else
+  #         falls to the catch-all.
+  # false = pins first, then the rules above (recommended).
+  strict-items: false
+
+# Browse categories live in categories/<name>.yml; the file name is the category id.
+# Categories are tried in ascending `priority` order and the first match wins.
+# Exactly one category must be the catch-all (match.any: true, highest priority
+# number); by default that's tools_misc.yml.
+# Match rule types (a category matches if any of its rules do):
+#   eco-namespaces   : eco plugin namespaces, e.g. [talismans], [ecoitems]
 #   materials        : exact Bukkit material names
 #   material-suffixes: material name ends with any of these (e.g. _SWORD)
 #   material-prefixes: material name starts with any of these
-#   tags             : built-in flags: EDIBLE, BLOCK, ARMOR, TOOL, WEAPON
-#   any              : true = catch-all (matches everything)
-# ---------------------------------------------------------------------
-# ---------------------------------------------------------------------
-# How categories resolve
-#
-# Order of resolution for every item:
-#   1. match.items:          an exact pin ("ecoitems:brazen_sword", "minecraft:trident").
-#                            Wins over EVERY other rule, in any category, at any priority.
-#   2. match.eco-namespaces: a whole eco plugin -> one category (talismans, ecoarmor, ...)
-#   3. match.materials / material-suffixes / material-prefixes / tags
-#                            inferred from the item's BASE material. This is only ever a guess
-#                            for custom items: a custom sword built on a STICK would land in Misc.
-#   4. match.any: true       the catch-all.
-#
-# Two tools so none of this is a black box:
-#   * /ah category  (while holding an item) tells you where it lands and WHICH rule decided it.
-#   * On startup, every eco item that only hit the catch-all is logged, so you know exactly
-#     which items are worth pinning, instead of enumerating every material in the game.
-# ---------------------------------------------------------------------
-category-options:
-  # true  = NO inference at all. Only items explicitly pinned via match.items: get a category;
-  #         everything else falls to the catch-all. For servers that want zero guessing.
-  # false = pins first, then the rules above. Recommended: works out of the box.
-  strict-items: false
+#   tags             : EDIBLE, BLOCK, ARMOR, TOOL, WEAPON
+#   any              : true = catch-all
+# An old inline `categories:` block in this file is migrated to categories/ on start.
 
-# ---------------------------------------------------------------------
-# Browse categories
-#
-# Categories now live in their own folder: categories/<name>.yml
-# The FILE NAME is the category id, so categories/weapons.yml defines "weapons".
-# Add a category by dropping in a new file; remove one by deleting its file.
-# Ordering in the browser's column 1 comes from each file's `priority` (lowest first).
-#
-# Exactly one category must be the catch-all (`match.any: true`, highest priority number)
-# or items matching nothing would have nowhere to go. That's tools_misc.yml by default.
-#
-# If you are upgrading and still have a `categories:` block below, it is migrated into
-# categories/ automatically on first start and can then be deleted.
-# ---------------------------------------------------------------------
-
-# ---------------------------------------------------------------------
-# Confirmation screens
-#
-# The irreversible actions are gated behind a confirm screen. Buy-It-Now and
-# Create always had one; bids and cancellations did not - and both move real
-# value on a single click (a bid holds your money until you're outbid or the
-# auction ends). Turn any of them off if you prefer fewer clicks.
-#
+# Confirmation screens. Turn any off for fewer clicks.
 # Layouts: gui/confirm-purchase.yml, confirm-bid.yml, confirm-cancel.yml
-# ---------------------------------------------------------------------
 confirmations:
   bid: true
   cancel: true
   purchase: true
 
-# ---------------------------------------------------------------------
-# Item tiers (the tier filter on the browse screen)
-#
-# Tiers ARE eco's rarities. They are discovered automatically from
-# plugins/EcoItems/rarities/*.yml, which is the eco suite's central rarity
-# registry: a rarity's `items:` list can claim items from ANY eco plugin
-# (ecoitems:, talismans:, reforges:, ecoarmor:, ecopets:, ecoscrolls:).
-#
-# That means you never define tiers here — you define them in EcoItems, and
-# whatever rarity an item shows in-game is exactly what this filter sorts by.
-# This section only CURATES the filter: cycle order, icons, and what to hide.
-#
-# The filter always starts at "No Filter" and cycles through the tiers below.
-# ---------------------------------------------------------------------
+# Tier filter on the browse screen. Tiers are eco's rarities, discovered from
+# plugins/EcoItems/rarities/*.yml; define them there. This section only sets
+# cycle order, icons and what to hide. The filter starts at "No Filter".
 tiers:
   enabled: true
 
-  # Cycle order. Any discovered rarity not listed here is appended after these
-  # (sorted by weight). 'none' is always excluded — it means "no rarity".
+  # Cycle order. Discovered rarities not listed here follow, sorted by weight.
+  # 'none' ("no rarity") is always excluded.
   order:
     - common
     - uncommon
@@ -236,17 +149,13 @@ tiers:
     very_special: MAGENTA_DYE
 
 
-# ---------------------------------------------------------------------
-# Sorting for the browse screen.
-# Options: NEWEST, OLDEST, PRICE_LOW, PRICE_HIGH, ENDING_SOON
-# ---------------------------------------------------------------------
+# Browse sort: NEWEST, OLDEST, PRICE_LOW, PRICE_HIGH, ENDING_SOON
 default-sort: NEWEST
 
 # How often (in minutes) the plugin sweeps for expired listings.
 expiry-sweep-minutes: 5
 
-# How long closed listings (sold / expired / cancelled) and their bid history are
-# kept, in days. They are the audit trail for disputes, so the default keeps a
-# generous window - but without a bound the tables only ever grow. 0 = keep forever.
+# Days closed listings (sold / expired / cancelled) and their bid history are
+# kept as an audit trail. 0 = keep forever.
 closed-retention-days: 90
 

@@ -14,7 +14,7 @@ import java.util.logging.Logger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** Placeholder values are text, never formatting or further placeholders. */
+// Placeholder values are text, never formatting or further placeholders.
 class MessageManagerTest {
     @TempDir Path folder;
 

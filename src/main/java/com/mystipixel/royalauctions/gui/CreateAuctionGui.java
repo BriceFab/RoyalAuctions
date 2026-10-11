@@ -13,7 +13,7 @@ import org.bukkit.inventory.ItemStack;
 import java.util.List;
 import java.util.Map;
 
-/** Create Auction — layout from gui/create.yml. The item lives in the CreateSession, not the menu. */
+/** Create Auction menu (gui/create.yml). The item lives in the CreateSession, not the menu. */
 public final class CreateAuctionGui extends CreateFlowGui {
 
     private final MenuTemplate template;
@@ -38,7 +38,6 @@ public final class CreateAuctionGui extends CreateFlowGui {
                 "toggle_hint", manager.t("type-toggle", "type", manager.t(auction ? "type.bin" : "type.auction")));
         template.applyStatic(inventory, placeholders);
 
-        // Show the deposited item in the configured "item" slot when present.
         int itemSlot = template.slotOf("item");
         if (itemSlot >= 0 && s != null && s.hasItem()) {
             ItemStack shown = GuiUtil.appendLore(s.item(),
@@ -63,7 +62,6 @@ public final class CreateAuctionGui extends CreateFlowGui {
         }
 
         if (!isTopClick(event)) {
-            // Click an item in your own inventory to deposit it (only when the sell slot is empty).
             if (!s.hasItem() && event.getClickedInventory() != null) {
                 ItemStack clicked = event.getCurrentItem();
                 if (clicked != null && !clicked.getType().isAir()) {
@@ -97,7 +95,6 @@ public final class CreateAuctionGui extends CreateFlowGui {
             }
             case CANCEL -> manager.cancelCreate(player);
             default -> {
-                // decorative
             }
         }
     }

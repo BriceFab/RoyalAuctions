@@ -16,9 +16,9 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Startup schema migration on SQLite: upgrading an old database and a fresh install. */
+// Startup schema migration on SQLite: upgrading an old database and a fresh install.
 class SchemaMigrationTest {
-    /** ra_listings as it was before bidding and tiers: no type, bid columns or tier. */
+    // ra_listings as it was before bidding and tiers: no type, bid columns or tier.
     static final String PRE_BIDDING_LISTINGS = "CREATE TABLE ra_listings (id CHAR(36) PRIMARY KEY,"
             + " seller_id CHAR(36) NOT NULL, seller_name VARCHAR(32) NOT NULL, item_data TEXT NOT NULL,"
             + " display_name VARCHAR(256) NOT NULL, category VARCHAR(64) NOT NULL, price DOUBLE PRECISION NOT NULL,"

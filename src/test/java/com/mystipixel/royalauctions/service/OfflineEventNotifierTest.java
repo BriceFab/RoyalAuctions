@@ -26,7 +26,7 @@ import java.util.logging.Logger;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-/** The join notice against real SQLite: offline events plus the reminder of what waits in /ah collect. */
+// The join notice against real SQLite: offline events plus the reminder of what waits in /ah collect.
 class OfflineEventNotifierTest {
     @TempDir Path folder;
     JavaPlugin plugin; AuctionDatabase db; MessageManager messages; VaultHook vault; PluginConfig config;

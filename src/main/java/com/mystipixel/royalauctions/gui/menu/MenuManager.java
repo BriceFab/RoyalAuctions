@@ -52,7 +52,7 @@ public final class MenuManager {
         return MenuTemplate.load(file, defaultTitle, defaultRows);
     }
 
-    /** A template by its menu id (the file name without .yml), or null if there is no such menu. */
+    /** A template by its menu id (the file name without .yml), or null. */
     public MenuTemplate get(String id) {
         if (id == null) {
             return null;

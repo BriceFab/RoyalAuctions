@@ -18,7 +18,7 @@ public final class GuiUtil {
     private GuiUtil() {
     }
 
-    /** Comma-grouped amount like Hypixel ("1,650,000,000"), trimming needless decimals. */
+    /** Comma-grouped amount ("1,650,000,000"), trimming needless decimals. */
     public static String comma(double amount) {
         return COMMA.format(amount);
     }
@@ -48,7 +48,6 @@ public final class GuiUtil {
         return button(material, " ", List.of());
     }
 
-    /** Append extra lore lines to an existing item, preserving its own name and lore. */
     public static ItemStack appendLore(ItemStack item, List<String> extra) {
         ItemMeta meta = item.getItemMeta();
         if (meta == null) {
@@ -63,7 +62,7 @@ public final class GuiUtil {
         return item;
     }
 
-    /** Human-friendly remaining time, e.g. "1d 3h", "45m", "12s". */
+    /** Remaining time, e.g. "1d 3h", "45m", "12s". */
     public static String timeLeft(long millis) {
         if (millis <= 0) {
             return "expired";

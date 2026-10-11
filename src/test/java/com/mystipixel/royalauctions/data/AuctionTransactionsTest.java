@@ -15,7 +15,7 @@ import java.util.logging.Logger;
 import static com.mystipixel.royalauctions.data.AuctionTransactions.State.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real JDBC transactions; queued executors let tests stop at each external-effect boundary. */
+// Real JDBC transactions; queued executors let tests stop at each external-effect boundary.
 class AuctionTransactionsTest {
     @TempDir Path folder;
     AuctionDatabase db;
@@ -157,8 +157,7 @@ class AuctionTransactionsTest {
     }
 
     @Test void closingRunnerDeclinesEffectsThatHaveNotStarted() throws Exception {
-        // Shutdown: an exchange whose intent is durable but whose effect has not run is recorded as
-        // not applied, so it finishes cleanly instead of being held as ambiguous.
+        // On shutdown, a durable intent whose effect has not run is recorded as not applied.
         var r = tx.reserveCapture(seller, "Seller", bytes, worker);
         AtomicInteger calls = new AtomicInteger(); List<ExternalEffectRunner.Result> results = new ArrayList<>();
         new ExternalEffectRunner(tx, Runnable::run, Runnable::run, worker, e -> fail(e), () -> true)
