@@ -11,25 +11,14 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 /**
- * The eco suite's rarity registry, read straight from {@code plugins/EcoItems/rarities/*.yml}.
- *
- * <p>EcoItems' rarities are not EcoItems-only: each rarity file carries an {@code items:} list that
- * can claim items from <em>any</em> eco namespace — {@code talismans:}, {@code ecoarmor:},
- * {@code reforges:}, {@code ecopets:}, {@code ecoscrolls:} — which makes this folder the single
- * source of truth for item rarity across the whole suite. We read it directly (no API coupling to a
- * paid plugin), so whatever rarity the item shows in-game is exactly what the auction filter uses.
- *
- * <p>An item's rarity can be declared two ways, and both are honoured:
- * <ol>
- *   <li>a rarity's {@code items:} list naming the item ({@code namespace:id})</li>
- *   <li>an EcoItems item's own {@code rarity:} field</li>
- * </ol>
- * If more than one rarity claims an item, the highest {@code weight} wins — matching EcoItems' own
- * semantics (that's why {@code none} ships with weight 100).
+ * The eco suite's rarities, read from {@code plugins/EcoItems/rarities/*.yml}. A rarity's
+ * {@code items:} list can claim items from any eco namespace; an EcoItems item may also declare
+ * {@code rarity:} itself. If several rarities claim an item, the highest {@code weight} wins, as in
+ * EcoItems.
  */
 public final class RarityRegistry {
 
-    /** One rarity: its id (the file name), display text, and weight. */
+    /** {@code id} is the file name. */
     public record Rarity(String id, String display, int weight) {
     }
 
@@ -75,10 +64,7 @@ public final class RarityRegistry {
         return id == null ? null : byId.get(id.toLowerCase(Locale.ROOT));
     }
 
-    /**
-     * The rarity id of an eco item, keyed by its full lookup id ({@code talismans:starter_talisman}).
-     * Returns null for untiered items and for the explicit {@code none} rarity.
-     */
+    /** The rarity id for a full eco id ({@code talismans:starter_talisman}); null if untiered or {@code none}. */
     public String rarityOf(String ecoItemKey) {
         if (ecoItemKey == null) {
             return null;
@@ -86,8 +72,6 @@ public final class RarityRegistry {
         String rarity = rarityByItemKey.get(ecoItemKey.toLowerCase(Locale.ROOT));
         return NONE.equals(rarity) ? null : rarity;
     }
-
-    // ------------------------------------------------------------------ loading
 
     private void loadRarities(File dir) {
         File[] files = dir.listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".yml") && !n.startsWith("_"));
@@ -104,14 +88,12 @@ public final class RarityRegistry {
 
             byId.put(id, new Rarity(id, display, weight));
 
-            // A rarity's items: list can name items from ANY eco plugin — this is the cross-suite hook.
             for (String itemKey : cfg.getStringList("items")) {
                 claim(itemKey, id, weight);
             }
         }
     }
 
-    /** EcoItems' own items may instead declare {@code rarity:} in their config. */
     private void loadItemRarityFields(File dir) {
         File[] files = dir.listFiles();
         if (files == null) {
@@ -137,7 +119,7 @@ public final class RarityRegistry {
         }
     }
 
-    /** Assign a rarity to an item key; the highest weight wins if several rarities claim it. */
+    // The highest weight wins if several rarities claim an item.
     private void claim(String itemKey, String rarityId, int weight) {
         if (itemKey == null || itemKey.isBlank()) {
             return;

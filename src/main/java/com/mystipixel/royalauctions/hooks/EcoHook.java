@@ -12,9 +12,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Optional integration with the eco platform. All eco types are only ever touched
- * <em>after</em> the {@link #present} guard, so if eco isn't installed the JVM never
- * links the {@code com.willfp.*} references and this class stays harmless.
+ * Optional eco integration. eco types are only touched after the {@link #present} guard, so without
+ * eco the JVM never links the {@code com.willfp.*} references.
  */
 public final class EcoHook {
 
@@ -29,9 +28,8 @@ public final class EcoHook {
     }
 
     /**
-     * The eco item id of a custom item — e.g. {@code enchanted_diamond} for an {@code ecoitems:} item —
-     * or {@code null} for vanilla / non-eco items. Pair with {@link #namespaceOf} to know which plugin
-     * it came from.
+     * The eco id of a custom item (e.g. {@code enchanted_diamond}), or null for non-eco items.
+     * {@link #namespaceOf} gives the plugin it came from.
      */
     public String customItemId(ItemStack item) {
         if (!present || item == null) {
@@ -52,11 +50,8 @@ public final class EcoHook {
     }
 
     /**
-     * Every custom item registered with eco, keyed by its full id ({@code ecoitems:brazen_sword}).
-     * Spans the whole suite — EcoItems, Talismans, Reforges, EcoArmor, EcoPets, EcoScrolls — because
-     * they all register into eco's shared item registry. Used for the startup category audit.
-     * Returns an empty map if eco is absent or its API shape changes; the audit is a nicety, never
-     * something that should break startup.
+     * Every custom item registered with eco, keyed by full id ({@code ecoitems:brazen_sword}). Empty
+     * if eco is absent or its API changed, since the startup audit must never break startup.
      */
     public Map<String, ItemStack> allCustomItems() {
         Map<String, ItemStack> out = new LinkedHashMap<>();
@@ -76,16 +71,14 @@ public final class EcoHook {
                         .toLowerCase(Locale.ROOT), stack);
             }
         } catch (Throwable ignored) {
-            // eco API hiccup — the audit is optional, so just report nothing.
+            // The audit is optional, so report nothing.
         }
         return out;
     }
 
     /**
-     * Resolve a menu item lookup id into a stack. Vanilla ids (bare or {@code minecraft:}-namespaced)
-     * go straight to Bukkit — eco's lookup doesn't reliably handle the {@code minecraft:} namespace.
-     * Custom namespaces ({@code ecoitems:...}) are resolved through eco. Falls back to STONE so a
-     * typo in a menu config can never blow up rendering.
+     * Resolves a menu item lookup id. Vanilla ids go straight to Bukkit (eco's lookup doesn't reliably
+     * handle {@code minecraft:}); others go through eco. Falls back to STONE so a typo can't break a menu.
      */
     public ItemStack resolve(String id, int amount) {
         Material vanilla = vanillaMaterial(id);
@@ -102,13 +95,12 @@ public final class EcoHook {
                     return item;
                 }
             } catch (Throwable ignored) {
-                // unknown id — fall through
+                // unknown id: fall through
             }
         }
         return new ItemStack(Material.STONE, amount);
     }
 
-    /** The vanilla material for a bare or {@code minecraft:}-namespaced id, else null. */
     private Material vanillaMaterial(String id) {
         if (id == null || id.isBlank()) {
             return null;
@@ -125,10 +117,7 @@ public final class EcoHook {
         return (material != null && !material.isAir()) ? material : null;
     }
 
-    /**
-     * The eco source namespace of an item — e.g. {@code talismans}, {@code reforges},
-     * {@code ecoarmor}, {@code ecoitems} — or {@code null} for vanilla / non-eco items.
-     */
+    /** The eco namespace of an item (e.g. {@code talismans}, {@code ecoitems}), or null for non-eco items. */
     public String namespaceOf(ItemStack item) {
         if (!present || item == null) {
             return null;

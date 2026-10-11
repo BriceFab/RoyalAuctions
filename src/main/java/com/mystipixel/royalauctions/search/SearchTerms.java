@@ -25,12 +25,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Turns what a player typed into the search box into extra things to match besides the listing name:
- * the vanilla items whose translated name contains the text, and the enchantments it names (with an
- * optional level, {@code sharpness 5} or {@code sharpness V}).
- *
- * <p>Translated names come from Minecraft language files the owner drops into {@code lang/}. Without
- * them, enchantments still match by their English registry name. Safe to call from any thread.
+ * Turns search text into extra matches besides the listing name: vanilla items whose translated name
+ * contains it, and enchantments it names, with an optional level ({@code sharpness 5}, {@code sharpness V}).
+ * Translations come from language files in {@code lang/}. Thread-safe.
  */
 public final class SearchTerms {
 

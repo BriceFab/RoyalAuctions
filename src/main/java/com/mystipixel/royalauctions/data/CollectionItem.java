@@ -4,13 +4,9 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.UUID;
 
-/**
- * An item waiting in a player's collection: a returned/expired/cancelled listing,
- * or a purchase that couldn't fit in the buyer's inventory.
- */
+/** An item waiting in a player's collection: a returned listing, or a purchase that didn't fit. */
 public final class CollectionItem {
 
-    /** Why the item is in the collection (shown as lore). */
     public enum Reason {
         PURCHASE,
         EXPIRED,

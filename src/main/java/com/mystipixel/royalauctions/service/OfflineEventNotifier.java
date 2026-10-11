@@ -23,19 +23,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
- * Replays the auction-house events that happened while a player was offline — sales, outbids, won
- * auctions, expired listings — as a short summary shortly after they join. Without this, money and
- * refunds move silently while they're away and items appear in the collection with no explanation.
+ * Replays events from while a player was offline as a short summary after they join, and reminds
+ * them of anything waiting in their collection unless the summary already pointed there.
  *
- * <p>Delivery is read, send, then delete: events are read off-thread, shown on the main thread, and
- * only then deleted by row id. A player who disconnects before the send, or a crash at any point,
- * leaves the events queued for next time. One delivery per player runs at a time, so a join and a
- * live notification arriving together cannot show the same events twice.
- * The delay after join is so the summary lands after the join-message noise, not inside it.
- *
- * <p>On join it also reminds the player of anything still waiting in their collection (items, or
- * sale earnings when they are collected by hand), unless the summary already pointed them there.
- * An item can land there with no event at all, for example when the player quits mid-listing.
+ * <p>Read, send, then delete by row id, so a disconnect or crash leaves events queued. One delivery
+ * per player at a time, so a join and a live notification cannot show the same events twice.
  */
 public final class OfflineEventNotifier implements Listener {
 
@@ -79,7 +71,7 @@ public final class OfflineEventNotifier implements Listener {
         }, DELAY_TICKS);
     }
 
-    /** Trigger the same queue for an online recipient; leave offline players' notices untouched. */
+    /** Delivers now to an online recipient; offline players' notices wait for their join. */
     public void notifyOnline(UUID id) {
         workers.sync(() -> {
             Player player = Bukkit.getPlayer(id);
@@ -115,7 +107,7 @@ public final class OfflineEventNotifier implements Listener {
         workers.sync(() -> {
             Player player = Bukkit.getPlayer(id);
             if (player == null || !player.isOnline()) {
-                finish(id);                      // bounced before delivery — the events stay queued
+                finish(id);                      // left before delivery: the events stay queued
                 return;
             }
             boolean pointedAtCollect = !events.isEmpty() && send(player, List.copyOf(events.values()));
@@ -190,7 +182,7 @@ public final class OfflineEventNotifier implements Listener {
                     pointedAtCollect = true;
                 }
                 default -> {
-                    continue;                    // a type from a future version — skip, don't crash
+                    continue;                    // a type from a future version: skip
                 }
             }
             lines++;

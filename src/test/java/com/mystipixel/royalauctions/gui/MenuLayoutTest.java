@@ -20,7 +20,7 @@ class MenuLayoutTest {
     private static final List<String> MENUS = List.of("bid", "bids", "browse", "collection", "confirm-auction",
             "confirm-bid", "confirm-cancel", "confirm-purchase", "create", "duration", "hub", "manage", "seller");
 
-    // two fixed buttons on one slot means the later one hides the earlier, as Back once hid Search
+    // two fixed buttons on one slot: the later one hides the earlier
     @Test
     void shippedMenusNeverPutTwoButtonsOnOneSlot() throws IOException {
         List<String> clashes = new ArrayList<>();

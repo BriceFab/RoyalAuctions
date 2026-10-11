@@ -1,9 +1,9 @@
 # Auction Browser.
 #
 # Layout:
-#   column 1 (A) = category buttons, top to bottom, from config.yml `categories` (priority order)
-#   column 2     = a glass divider — each row is its own mask item, so every category can have
-#                  its own colour (just swap the material in mask.items below)
+#   column 1 (A) = category buttons from categories/, in priority order
+#   column 2     = a glass divider; each row is its own mask item, so swap the material in
+#                  mask.items to give a category its own colour
 #   columns 3-9  = the listings grid (rows 1-5)
 #   row 6        = search / back / sort / tier / type filters + paging
 #
@@ -30,8 +30,8 @@ mask:
     - "A67777777"
 
 regions:
-  category-slots: "A"    # column 1, rows 1-6 — filled from config.yml categories
-  content-slots: "0"     # columns 3-9, rows 1-5 — 35 listings per page
+  category-slots: "A"    # column 1, rows 1-6, filled from categories/
+  content-slots: "0"     # columns 3-9, rows 1-5: 35 listings per page
 
 slots:
   - id: prev
@@ -74,12 +74,9 @@ slots:
       - id: ah_sort
 
   - id: tier
-    # Item tiers are eco's rarities (plugins/EcoItems/rarities/) and cover the whole eco
-    # suite - a rarity's items: list can claim talismans:, ecoarmor:, reforges:, ecopets: ...
-    #
-    # %tier_list% is a LIST placeholder: a lore line that is exactly %tier_list% expands into
-    # one line per tier, with the selected one marked. Left-click steps up the list,
-    # right-click steps down (swap the two effect ids below to reverse that).
+    # Tiers are eco's rarities (plugins/EcoItems/rarities/).
+    # A lore line that is exactly %tier_list% expands into one line per tier, the selected one
+    # marked. Left-click steps up, right-click down (swap the two effect ids to reverse that).
     item: 'nether_star hide_attributes name:"&eItem Tier"'
     lore:
       - "&7Filter listings by item tier."
@@ -128,7 +125,7 @@ sounds:
     volume: 0.7
     pitch: 1.2
 
-# Lines appended BELOW each listing's own item lore (Hypixel-style).
+# Lines appended below each listing's own item lore.
 # Placeholders: %seller% %price% %starting_price% %bids% %top_bidder%
 #               %ends_in% %bid_label% %tier% %click_hint%
 listing-lore:

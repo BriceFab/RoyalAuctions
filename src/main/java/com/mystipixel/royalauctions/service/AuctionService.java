@@ -41,7 +41,7 @@ public final class AuctionService {
     private Consumer<UUID> eventReady = id -> {};
 
     public void eventNotifier(Consumer<UUID> notifier) { this.eventReady = notifier; }
-    /** Main-thread compatibility worker for file receipts created before the database journal. */
+    /** Retries file receipts created before the database journal. Main thread. */
     public void retryPayments() { legacyPayments.retryRejected(); }
 
     public AuctionService(JavaPlugin plugin, AuctionDatabase db, VaultHook vault, PluginConfig config,
@@ -58,7 +58,7 @@ public final class AuctionService {
                 e -> logError("processing an external effect; check /ah recovery", e), workers::closing);
         plugin.getLogger().info("Auction recovery worker: " + worker);
     }
-    /** Start new work. Refused once shutdown begins; work already under way still completes. */
+    // Refused once shutdown begins; work already under way still completes.
     private void async(Runnable r) { if (!workers.closing()) workers.async(r); }
     private void sync(Runnable r) { workers.sync(r); }
     private void logError(String what, Throwable e) { plugin.getLogger().log(Level.SEVERE, "Error " + what, e); }
@@ -162,7 +162,7 @@ public final class AuctionService {
 
     public void createListing(Player seller, UUID collection, ItemStack item, double price, ListingType type,
                               long duration, Consumer<Boolean> completed) {
-        // The menus reach this too, not only /ah sell, so the permission is enforced here.
+        // Menus reach this too, not only /ah sell, so the permission is enforced here.
         if (!seller.hasPermission("royalauctions.sell")) {
             tell(seller, "general.no-permission"); completed.accept(false); return;
         }
@@ -193,9 +193,8 @@ public final class AuctionService {
     }
 
     /**
-     * Active-listing cap for a seller: unlimited for admins, else the highest
-     * {@code royalauctions.limit.<n>} they hold ({@code royalauctions.limit.unlimited} lifts it),
-     * else {@code max-per-player}. Any negative result means unlimited.
+     * Active-listing cap: unlimited for admins, else the highest {@code royalauctions.limit.<n>}
+     * ({@code royalauctions.limit.unlimited} lifts it), else {@code max-per-player}. Negative = unlimited.
      */
     public int listingLimit(Player seller) {
         if (seller.hasPermission("royalauctions.admin")) return -1;
@@ -246,13 +245,7 @@ public final class AuctionService {
         return false;
     }
 
-    // ------------------------------------------------------------------ loaders (async → main callback)
-
-    /**
-     * One page of browse results, fetched off the main thread. The stale-category repair runs over the
-     * rows on this page; a full sweep also happens at startup, so listings the player never scrolls to
-     * still get fixed.
-     */
+    /** One page of browse results, fetched off the main thread; stale categories on it are repaired. */
     public void loadBrowsePage(ListingQuery query, int page, int perPage, Consumer<ListingPage> callback) {
         async(() -> {
             try {
@@ -266,11 +259,7 @@ public final class AuctionService {
         });
     }
 
-    /**
-     * Pass over every active listing, repairing categories renamed in config. Runs after startup
-     * (once eco has registered its items, so custom items are not filed by base material) and
-     * after each reload.
-     */
+    /** Repairs categories renamed in config on every active listing. Run after eco has registered its items. */
     public void repairAllCategories() {
         async(() -> {
             try {
@@ -281,7 +270,7 @@ public final class AuctionService {
         });
     }
 
-    /** Index the enchantments of listings from before enchantment search. Once per start, not on reload. */
+    /** Indexes enchantments of listings from before enchantment search. Once per start, not on reload. */
     public void backfillEnchantmentIndex() {
         async(() -> {
             try {
@@ -306,11 +295,7 @@ public final class AuctionService {
         });
     }
 
-    /**
-     * A listing's category is stamped when it's created, so renaming a category in config would
-     * otherwise strand every existing listing under an id no button matches — visible in "All", but
-     * in no category. Re-derive those from the item and persist the fix, once.
-     */
+    // Categories are stamped at creation, so a renamed category strands listings; re-derive and persist.
     private void repairStaleCategories(List<Listing> listings) {
         int repaired = 0;
         for (Listing l : listings) {
@@ -357,7 +342,7 @@ public final class AuctionService {
         });
     }
 
-    /** Active auctions this player has bid on (winning or outbid) — backs the View Bids menu. */
+    /** Active auctions this player has bid on, winning or outbid. */
     public void loadBidListings(UUID bidderId, Consumer<List<Listing>> callback) {
         async(() -> {
             try {
@@ -425,7 +410,7 @@ public final class AuctionService {
         } catch (Exception e) { logError("reading recovery journal", e); }
         finally { recovering.set(false); }
     }
-    /** Deposit a READY payout through the journal, so it moves money at most once. */
+    // Goes through the journal so a READY payout moves money at most once.
     private void pay(AuctionTransactions.Operation o, AuctionTransactions.PaymentContext context,
                      Consumer<ExternalEffectRunner.Result> then) {
         effects.execute(o.id(), () -> vault.deposit(Bukkit.getOfflinePlayer(o.player()), o.amount()), outcome -> {
@@ -510,7 +495,7 @@ public final class AuctionService {
     }
     public void refreshActiveCount() { async(() -> { try { activeCache = db.countActive(); } catch (Exception e) { logError("counting auctions", e); } }); }
     public int activeCache() { return activeCache; }
-    /** Longest name the listings and events tables hold (VARCHAR(256); MySQL rejects longer). */
+    // VARCHAR(256) in the listings and events tables; MySQL rejects longer.
     static final int MAX_NAME_LENGTH = 256;
 
     private String displayNameOf(ItemStack item) {

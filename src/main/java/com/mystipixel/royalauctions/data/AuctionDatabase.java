@@ -19,10 +19,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * All persistence for RoyalAuctions. One JDBC/HikariCP implementation serves both
- * backends; the only differences are the connection URL, driver and the "big text"
- * column type. Every method here is blocking and MUST be called off the main thread
- * (see {@code AuctionService}, which schedules them).
+ * All persistence, one JDBC/HikariCP implementation for both backends. Every method blocks and
+ * must be called off the main thread ({@code AuctionService} schedules them).
  */
 public final class AuctionDatabase {
 
@@ -45,8 +43,6 @@ public final class AuctionDatabase {
         this.config = storageConfig;
         this.logger = logger;
     }
-
-    // ------------------------------------------------------------------ lifecycle
 
     public void init() throws SQLException {
         String rawType = config.getString("type", "SQLITE").toUpperCase(java.util.Locale.ROOT);
@@ -133,8 +129,7 @@ public final class AuctionDatabase {
                     + "status VARCHAR(16) NOT NULL,"
                     + "buyer_id CHAR(36),"
                     + "sold_at BIGINT)");
-            // Upgrade databases created before bidding / tiers were added. Existing rows get a NULL
-            // tier, which simply means "no rarity" — they still show under the unfiltered view.
+            // A NULL tier on older rows means "no rarity".
             addColumn(st, "tier", "VARCHAR(32)");
             addColumn(st, "type", "VARCHAR(16) NOT NULL DEFAULT 'BIN'");
             addColumn(st, "current_bid", "DOUBLE PRECISION");
@@ -153,8 +148,8 @@ public final class AuctionDatabase {
                     + "item_data " + bigText() + " NOT NULL,"
                     + "reason VARCHAR(16) NOT NULL,"
                     + "created_at BIGINT NOT NULL)");
-            // Every bid ever placed. ra_listings only remembers the *current* top bidder, so this is
-            // what makes "auctions I've bid on" (including ones I've since been outbid on) knowable.
+            // Every bid ever placed: ra_listings only keeps the current top bidder, and "auctions I've
+            // bid on" must include ones the player was outbid on.
             st.executeUpdate("CREATE TABLE IF NOT EXISTS ra_bids ("
                     + "id " + autoIncrementPk() + ","
                     + "listing_id CHAR(36) NOT NULL,"
@@ -165,8 +160,7 @@ public final class AuctionDatabase {
             createIndex(st, "idx_ra_listings_status", "ra_listings(status)");
             createIndex(st, "idx_ra_listings_seller", "ra_listings(seller_id)");
             createIndex(st, "idx_ra_collection_owner", "ra_collection(owner_id)");
-            // Composites matching how the hot queries actually filter and sort, so the planner can serve
-            // them from the index instead of scanning every listing and sorting the result.
+            // Composites matching how the hot queries filter and sort.
             createIndex(st, "idx_ra_listings_status_created", "ra_listings(status, created_at)");
             createIndex(st, "idx_ra_listings_status_seller", "ra_listings(status, seller_id)");
             createIndex(st, "idx_ra_listings_status_expires", "ra_listings(status, expires_at)");
@@ -192,29 +186,22 @@ public final class AuctionDatabase {
     }
 
     private void addColumn(Statement st, String column, String definition) throws SQLException {
-        // Ask the metadata whether the column exists, rather than ALTERing and swallowing the error.
-        // Swallowing treats a genuinely-failed migration as "already there" — the schema ends up
-        // missing the column while boot looks healthy, and every read then fails "column not found".
-        // That exact trap cost RoyalSkyblock a live outage this week; don't repeat it here.
-        //
-        // The lookup is scoped to this connection's database: a null catalog means "every database"
-        // to MySQL Connector/J, so another server's RoyalAuctions schema on the same MySQL instance
-        // would answer for ours. '_' is a wildcard in metadata patterns, so the rows are checked for
-        // an exact name. A failure is rethrown so startup stops instead of running on a
-        // half-migrated schema.
+        // Check the metadata rather than ALTERing and swallowing the error, which hides a failed
+        // migration. Scope to this database: a null catalog means "every database" to Connector/J.
+        // '_' is a metadata wildcard, so names are compared exactly. Failures stop startup.
         Connection c = st.getConnection();
         try (ResultSet rs = c.getMetaData().getColumns(c.getCatalog(), null, "ra_listings", column)) {
             while (rs.next()) {
                 if ("ra_listings".equalsIgnoreCase(rs.getString("TABLE_NAME"))
                         && column.equalsIgnoreCase(rs.getString("COLUMN_NAME"))) {
-                    return;                     // already present
+                    return;
                 }
             }
         }
         try {
             st.executeUpdate("ALTER TABLE ra_listings ADD COLUMN " + column + " " + definition);
         } catch (SQLException e) {
-            throw new SQLException("Migration failed: could not add ra_listings." + column + " — " + e.getMessage(), e);
+            throw new SQLException("Migration failed: could not add ra_listings." + column + ": " + e.getMessage(), e);
         }
         logger.info("Migrated ra_listings: added column " + column + ".");
     }
@@ -227,18 +214,16 @@ public final class AuctionDatabase {
             try {
                 st.executeUpdate("CREATE INDEX " + name + " ON " + target);
             } catch (SQLException e) {
-                // An index that already exists is the expected outcome here and is fine. Anything else
-                // (no permission to alter the schema, a typo in the target) leaves the query planner
-                // doing full scans forever, so say so rather than failing silently.
+                // Already existing is fine; anything else leaves queries doing full scans, so warn.
                 if (!alreadyExists(e)) {
-                    logger.warning("Could not create index " + name + " on " + target + " — queries using it"
+                    logger.warning("Could not create index " + name + " on " + target + ", queries using it"
                             + " will fall back to a full table scan: " + e.getMessage());
                 }
             }
         }
     }
 
-    /** True when the driver is telling us the index is already there (MySQL 1061 / SQLite message). */
+    // MySQL error 1061, or SQLite's message.
     private static boolean alreadyExists(SQLException e) {
         if (e.getErrorCode() == 1061) {
             return true;
@@ -246,8 +231,6 @@ public final class AuctionDatabase {
         String message = e.getMessage();
         return message != null && message.toLowerCase(java.util.Locale.ROOT).contains("already exists");
     }
-
-    // ------------------------------------------------------------------ listings
 
     static void insertListing(Connection c, Listing l, ListingStatus status) throws SQLException {
         String sql = "INSERT INTO ra_listings "
@@ -331,13 +314,8 @@ public final class AuctionDatabase {
     }
 
     /**
-     * One page of active listings matching {@code query}, plus the total number of matches.
-     *
-     * <p>Filtering, sorting and paging all happen in SQL so a browse costs one page of rows rather than
-     * every active listing and its serialized item. The sort is mapped through a fixed whitelist — the
-     * ORDER BY clause is never built from caller input — and each ordering ends with the id so that
-     * listings sharing a price or timestamp keep a stable position between pages instead of shuffling
-     * and appearing twice (or not at all).
+     * One page of active listings matching {@code query}, plus the total number of matches. Each
+     * ordering ends with the id so listings with equal keys keep a stable position between pages.
      */
     public ListingPage browse(ListingQuery query, int page, int perPage) throws SQLException {
         List<Object> params = new ArrayList<>();
@@ -373,11 +351,9 @@ public final class AuctionDatabase {
         return new ListingPage(rows, total);
     }
 
-    /** WHERE clause for a browse, collecting its bind values into {@code params} in order. */
     private static String buildWhere(ListingQuery query, List<Object> params) {
         StringBuilder where = new StringBuilder("WHERE status='ACTIVE'");
-        // Category and tier ids are stored lowercase (see createSchema), so they are compared with
-        // a lowercased value directly: wrapping the column in LOWER() would defeat the index.
+        // Ids are stored lowercase; wrapping the column in LOWER() would defeat the index.
         if (query.category() != null) {
             where.append(" AND category = ?");
             params.add(query.category().toLowerCase(Locale.ROOT));
@@ -408,11 +384,7 @@ public final class AuctionDatabase {
         return where.toString();
     }
 
-    /**
-     * Neutralise LIKE wildcards typed into the search box, so searching for "50%" looks for that text
-     * rather than matching everything. '!' is the escape character because a backslash is not portable
-     * between MySQL and SQLite string literals.
-     */
+    // '!' escapes LIKE wildcards because a backslash is not portable between MySQL and SQLite literals.
     private static String escapeLike(String input) {
         StringBuilder out = new StringBuilder(input.length());
         for (char ch : input.toCharArray()) {
@@ -424,7 +396,7 @@ public final class AuctionDatabase {
         return out.toString();
     }
 
-    /** Fixed mapping from sort option to SQL. Never interpolates anything caller-supplied. */
+    // Fixed whitelist: never interpolates caller input.
     private static String orderBy(SortOrder sort) {
         return switch (sort) {
             case OLDEST -> "created_at ASC, id ASC";
@@ -435,7 +407,7 @@ public final class AuctionDatabase {
         };
     }
 
-    /** Bind the collected params starting at index 1; returns the next free index. */
+    // Returns the next free index.
     private static int bindAll(PreparedStatement ps, List<Object> params) throws SQLException {
         int index = 1;
         for (Object param : params) {
@@ -458,10 +430,7 @@ public final class AuctionDatabase {
         return out;
     }
 
-    /**
-     * Every still-active auction this player has bid on — whether they're currently winning or have
-     * been outbid. Backed by {@code ra_bids}, so it only knows bids placed since that table existed.
-     */
+    /** Active auctions this player has bid on, winning or outbid. Only knows bids placed since {@code ra_bids} existed. */
     public List<Listing> activeListingsBidOnBy(UUID bidderId) throws SQLException {
         List<Listing> out = new ArrayList<>();
         String sql = "SELECT l.* FROM ra_listings l WHERE l.status='ACTIVE' AND EXISTS ("
@@ -478,7 +447,6 @@ public final class AuctionDatabase {
         return out;
     }
 
-    /** Repair a listing whose stored category no longer exists (categories were renamed in config). */
     public void updateCategory(UUID id, String category) throws SQLException {
         String sql = "UPDATE ra_listings SET category=? WHERE id=?";
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -530,17 +498,10 @@ public final class AuctionDatabase {
         return out;
     }
 
-    // ------------------------------------------------------------------ retention
-
     /**
-     * Prune the audit tail: closed listings older than {@code cutoff}, the bids of listings that no
-     * longer exist, and undelivered offline events for players who never came back. Returns how many
-     * listings went.
-     *
-     * <p>{@code COALESCE(sold_at, expires_at)} approximates the closure time: SOLD rows stamp
-     * {@code sold_at}, while EXPIRED/CANCELLED rows have no closure stamp of their own — but their
-     * {@code expires_at} is at most one listing-duration away from it, which is close enough for a
-     * retention window measured in days.
+     * Prunes closed listings older than {@code cutoff}, orphaned bids and stale offline events.
+     * Returns how many listings went. EXPIRED/CANCELLED rows have no closure stamp, so
+     * {@code expires_at} stands in for it (at most one listing duration off).
      */
     public int pruneClosed(long cutoff) throws SQLException {
         int removed;
@@ -561,9 +522,6 @@ public final class AuctionDatabase {
         return removed;
     }
 
-    // ------------------------------------------------------------------ offline events
-
-    /** Queue an event for a player who was not online to see it happen. */
     public void addEvent(UUID player, String type, String item, double amount, long createdAt)
             throws SQLException {
         String sql = "INSERT INTO ra_events (player_id, type, item, amount, created_at) VALUES (?,?,?,?,?)";
@@ -578,9 +536,8 @@ public final class AuctionDatabase {
     }
 
     /**
-     * A player's queued events, oldest first, keyed by row id. Nothing is removed: the caller shows
-     * them and then calls {@link #deleteEvents}, so a crash in between repeats a notice rather than
-     * losing it.
+     * A player's queued events, oldest first, keyed by row id. Nothing is removed until
+     * {@link #deleteEvents}, so a crash in between repeats a notice rather than losing it.
      */
     public java.util.LinkedHashMap<Long, OfflineEvent> peekEvents(UUID player) throws SQLException {
         var out = new java.util.LinkedHashMap<Long, OfflineEvent>();
@@ -595,7 +552,6 @@ public final class AuctionDatabase {
         return out;
     }
 
-    /** Delete delivered events by row id. */
     public void deleteEvents(java.util.Collection<Long> ids) throws SQLException {
         if (ids.isEmpty()) {
             return;
@@ -641,8 +597,6 @@ public final class AuctionDatabase {
         }
         return out;
     }
-
-    // ------------------------------------------------------------------ collection
 
     public List<CollectionItem> collectionItems(UUID ownerId) throws SQLException {
         List<CollectionItem> out = new ArrayList<>();

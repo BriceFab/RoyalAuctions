@@ -8,10 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Pure invariants of a {@link Listing}: bid state, the price shown to buyers, and the minimum next
- * bid. No Bukkit involved as long as the item bytes aren't decoded.
- */
+// No Bukkit involved as long as the item bytes aren't decoded.
 class ListingTest {
 
     private static Listing bin(double price) {

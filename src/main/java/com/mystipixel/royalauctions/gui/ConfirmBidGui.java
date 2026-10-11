@@ -13,12 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Confirm Bid — layout from gui/confirm-bid.yml.
- *
- * <p>A bid moves real money and can't be taken back (you're only refunded if someone outbids you), so
- * it gets the same gate Buy-It-Now already had. Skippable via {@code confirmations.bid: false}.
- */
+/** Confirm Bid menu, laid out by gui/confirm-bid.yml. Skipped with {@code confirmations.bid: false}. */
 public final class ConfirmBidGui extends AuctionGui {
 
     private final GuiManager manager;
@@ -85,7 +80,6 @@ public final class ConfirmBidGui extends AuctionGui {
             case OPEN_BROWSE -> manager.openBrowse(player, category, search, sort, page);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative
             }
         }
     }

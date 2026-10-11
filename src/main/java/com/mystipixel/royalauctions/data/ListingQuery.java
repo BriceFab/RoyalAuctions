@@ -3,15 +3,10 @@ package com.mystipixel.royalauctions.data;
 import java.util.Set;
 
 /**
- * The filters behind one browse view. Every field is optional except the sort — a null category, tier
- * or type means "no filter on that", and a null/blank search matches everything. A search also matches
- * listings named exactly one of {@code searchItemNames} (lower case) or whose enchantment index contains
- * one of {@code searchEnchantments}; both come from {@code SearchTerms}.
- *
- * <p>This is what the browse menu hands to the database so filtering, sorting and paging all happen in
- * SQL. The menu used to load every active listing and do the work in memory, which meant a full table
- * read (including each listing's serialized item) every time anyone opened the auction house, changed a
- * filter, or turned a page.
+ * The filters behind one browse view. Everything but the sort is optional: null means no filter, and a
+ * blank search matches everything. A search also matches listings named exactly one of
+ * {@code searchItemNames} (lower case) or whose enchantment index contains one of
+ * {@code searchEnchantments}; both come from {@code SearchTerms}.
  */
 public record ListingQuery(String category, String tier, ListingType type, String search, SortOrder sort,
                            Set<String> searchItemNames, Set<String> searchEnchantments) {

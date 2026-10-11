@@ -4,10 +4,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 
 /**
- * Shared base for the create-auction screens (create / duration / confirm). Its job is to return
- * the escrowed item whenever the player closes the flow "for real" — i.e. not because we are
- * opening the next screen in the flow ({@code OPEN_NEW}) and not because we closed the menu to
- * collect a typed price in the text dialog ({@code awaitingPrice}).
+ * Base for the create-auction screens. Returns the escrowed item when the player really leaves the
+ * flow, not when moving to the next screen or closing to type a price.
  */
 public abstract class CreateFlowGui extends AuctionGui {
 
@@ -26,7 +24,7 @@ public abstract class CreateFlowGui extends AuctionGui {
             return;
         }
         if (event.getReason() == InventoryCloseEvent.Reason.OPEN_NEW) {
-            return; // moving to another screen in the flow
+            return;
         }
         if (session.awaitingPrice()) {
             return; // closed to type the price in the dialog

@@ -43,8 +43,7 @@ public final class ExternalEffectRunner {
             }
             main.execute(() -> {
                 final boolean applied;
-                // Shutting down: nothing has moved yet, so a durable "not applied" is the truth and
-                // lets the operation finish (or a payout return to READY) instead of being held.
+                // Shutting down before anything moved: a durable "not applied" lets it finish cleanly.
                 try { applied = !closing.getAsBoolean() && effect.apply(); }
                 catch (Exception e) {
                     errors.accept(e);

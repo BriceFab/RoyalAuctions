@@ -9,10 +9,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * The Auction House landing menu ({@code /ah}) — layout from gui/hub.yml.
- * Three destinations: Auction Browser, View Bids, and Manage Auctions.
- */
+/** The {@code /ah} landing menu, laid out by gui/hub.yml. */
 public final class HubGui extends AuctionGui {
 
     private final GuiManager manager;
@@ -49,7 +46,6 @@ public final class HubGui extends AuctionGui {
             case CREATE_AUCTION -> manager.openCreate(player);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative
             }
         }
     }

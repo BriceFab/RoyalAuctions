@@ -11,8 +11,7 @@ sell:
   hand-empty: "{prefix}&cYou must be holding an item to sell it."
   usage: "{prefix}&cUsage: &f/ah sell <price>"
   min-price: "{prefix}&cThe minimum listing price is &f{min}&c."
-  # Shown when listings.sellable-categories excludes the item's category. Name the place it
-  # DOES belong, or the player just learns the auction house is broken.
+  # Shown when listings.sellable-categories excludes the item's category. Say where it does belong.
   category-not-allowed: "{prefix}&cThe auction house is for gear — weapons, armour, tools,
     accessories and consumables. &7Sell materials and drops on the bazaar with &f/bz&7."
   max-price: "{prefix}&cThe maximum listing price is &f{max}&c."

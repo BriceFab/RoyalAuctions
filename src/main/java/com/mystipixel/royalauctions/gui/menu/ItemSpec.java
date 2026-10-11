@@ -17,11 +17,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Parses the EcoMenus inline item syntax used throughout {@code gui/*.yml}, e.g.
+ * Parses the EcoMenus inline item syntax used in {@code gui/*.yml}, e.g.
  * <pre>item: oak_sign hide_attributes name:"&amp;eSearch"</pre>
  * The first token is an item lookup (vanilla or {@code ecoitems:...}); the rest are flags
  * ({@code hide_enchants}, {@code hide_attributes}) and {@code key:"value"} modifiers ({@code name}).
- * Lore comes from the slot's separate {@code lore:} list. All of it may contain {@code %placeholders%}.
  */
 public final class ItemSpec {
 
@@ -70,16 +69,13 @@ public final class ItemSpec {
         return new ItemSpec(lookup, name, texture, head, hideEnch, hideAttr);
     }
 
-    /** Build the stack: resolve the lookup, fill placeholders in name/lore, and stamp the click action. */
     public ItemStack build(EcoHook eco, Map<String, String> placeholders, List<String> lore, MenuAction action) {
         return build(eco, placeholders, Map.of(), lore, action, action);
     }
 
     /**
-     * Build the stack with distinct left/right click actions and support for <em>list placeholders</em>:
-     * a lore line that is exactly {@code %key%} where {@code key} is in {@code listPlaceholders} is
-     * replaced by one lore line per entry. That's what lets a filter button print its whole option
-     * list, with the current selection marked, instead of only the current value.
+     * Builds the stack with separate left/right click actions. A lore line that is exactly
+     * {@code %key%} for a key in {@code listPlaceholders} becomes one lore line per entry.
      */
     public ItemStack build(EcoHook eco, Map<String, String> placeholders,
                            Map<String, List<String>> listPlaceholders, List<String> lore,
@@ -117,7 +113,6 @@ public final class ItemSpec {
         return item;
     }
 
-    /** Apply a base64 {@code texture:} or a {@code head:} owner to a player-head, the eco-suite way. */
     private void applyHeadTexture(ItemStack item, ItemMeta meta, Map<String, String> placeholders) {
         if (item.getType() != Material.PLAYER_HEAD || !(meta instanceof SkullMeta skull)) {
             return;
@@ -137,7 +132,6 @@ public final class ItemSpec {
         }
     }
 
-    /** If the whole lore line is a single {@code %list%} placeholder, return its lines; else null. */
     private static List<String> expand(String line, Map<String, List<String>> listPlaceholders) {
         if (line == null || listPlaceholders.isEmpty()) {
             return null;
@@ -149,9 +143,7 @@ public final class ItemSpec {
         return listPlaceholders.get(trimmed.substring(1, trimmed.length() - 1));
     }
 
-    // ---- helpers ----
-
-    /** Split on spaces but keep quoted segments together, so name:"a b c" stays one token. */
+    // Keeps quoted segments together, so name:"a b c" stays one token.
     private static List<String> tokenize(String raw) {
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();

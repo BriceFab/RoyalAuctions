@@ -2,10 +2,7 @@ package com.mystipixel.royalauctions.data;
 
 import java.util.List;
 
-/**
- * One page of browse results: the rows to draw, plus how many listings match the filters overall so the
- * menu can show "page 2 of 7" without holding every listing in memory.
- */
+/** One page of browse results plus the total match count, for "page 2 of 7". */
 public record ListingPage(List<Listing> rows, int total) {
 
     public static ListingPage empty() {

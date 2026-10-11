@@ -21,7 +21,7 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Search by translated item name and by enchantment against real SQL, and the enchantment backfill. */
+// Search by translated item name and by enchantment against real SQL, and the enchantment backfill.
 class SearchBrowseTest {
     @TempDir Path folder;
     AuctionDatabase db;

@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Auction Duration — layout from gui/duration.yml; options come from listings.durations in config. */
+/** Auction Duration menu (gui/duration.yml); options come from listings.durations in config. */
 public final class DurationGui extends CreateFlowGui {
 
     private final MenuTemplate template;

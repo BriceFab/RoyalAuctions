@@ -71,9 +71,9 @@ public final class TextInput implements Listener {
     }
 
     /**
-     * Ask for one line of text. The callback runs exactly once, on the main thread: the cleaned
-     * text (possibly empty), or null if no answer is coming (Cancel, Escape, quit, death, another
-     * menu opened, a newer prompt, or 5 minutes without an answer).
+     * Asks for one line of text. The callback runs exactly once, on the main thread: the cleaned text
+     * (possibly empty), or null if no answer is coming (cancel, quit, death, another menu, a newer
+     * prompt, or a 5 minute timeout).
      */
     public void request(Player player, List<String> titleLines, Consumer<String> callback) {
         if (closed) {
@@ -141,9 +141,8 @@ public final class TextInput implements Listener {
         p.callback().accept(text);
     }
 
-    // The client sends nothing when a dialog is dismissed some other way, so these events stand in
-    // for it and the timeout covers the rest. Next tick, so callers see the player gone, dead, or
-    // in the other menu.
+    // The client sends nothing when a dialog is dismissed some other way, so these events stand in.
+    // Next tick, so callers see the player gone, dead, or in the other menu.
     private void dismiss(UUID id) {
         Pending p = pending.get(id);
         if (p != null && !closed) {

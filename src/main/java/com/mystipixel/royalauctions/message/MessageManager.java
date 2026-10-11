@@ -50,11 +50,9 @@ public final class MessageManager {
     }
 
     /**
-     * Colour the template first, then drop the values in as literal text. Values include things
-     * players control, such as an anvil-renamed item's name; substituted before colouring, a name
-     * like "&a[Staff] You won 1,000,000" would be rendered as formatting in other players' chat.
-     * One pass, so a value that itself contains "{amount}" is not substituted again. Values keep
-     * the colour of the text around their placeholder.
+     * Colours the template first, then inserts values as literal text, so a player-controlled value
+     * (an anvil-renamed item) can't inject formatting. One pass: a value containing "{amount}" is not
+     * substituted again.
      */
     public Component component(String path, Map<String, String> placeholders) {
         Component message = Text.chat(raw(path).replace("{prefix}", prefix));
@@ -70,10 +68,7 @@ public final class MessageManager {
                 .build());
     }
 
-    /**
-     * Legacy '&' text for menu item names and lore, with {placeholders} filled in. Coloured later by
-     * the menu, so it stays a plain string.
-     */
+    /** Legacy '&' text for menu names and lore, placeholders filled; the menu colours it later. */
     public String text(String path, String... kv) {
         String value = raw(path).replace("{prefix}", prefix);
         for (int i = 0; i + 1 < kv.length; i += 2) {
@@ -90,7 +85,7 @@ public final class MessageManager {
         to.sendMessage(component(path, placeholders));
     }
 
-    /** Varargs convenience: send(sender, "sell.success", "item", name, "price", price). */
+    /** Usage: send(sender, "sell.success", "item", name, "price", price). */
     public void send(CommandSender to, String path, String... kv) {
         send(to, path, map(kv));
     }

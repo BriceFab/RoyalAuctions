@@ -1,5 +1,4 @@
-# View Bids — every active auction you've bid on, marked TOP BIDDER or OUTBID.
-# Being outbid means you were already refunded, so nothing is at stake — click to re-bid.
+# View Bids: every active auction you've bid on, marked TOP BIDDER or OUTBID. Click to re-bid.
 # Placeholders: %count% %top% %outbid% %page% %pages%
 
 title: "&8Auction House &7» &fYour Bids"

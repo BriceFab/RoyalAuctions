@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-/** Public service paths against real SQLite and a rejecting/ambiguous Vault provider. */
+// Public service paths against real SQLite and a rejecting/ambiguous Vault provider.
 class AuctionServicePaymentTest {
     @TempDir Path folder;
     JavaPlugin plugin; AuctionDatabase db; VaultHook vault; EconGuardHook guard;

@@ -4,13 +4,7 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.Base64;
 
-/**
- * Serialises an {@link ItemStack} with full component/NBT fidelity using Paper's
- * native {@code serializeAsBytes()} / {@code deserializeBytes()}. This is what makes
- * every eco-suite custom item (EcoItems, Talismans, Reforges, EcoArmor, …) survive a
- * round-trip through the auction house: their data lives in the item's persistent data
- * container / components, all of which these methods preserve.
- */
+// Paper's byte serialization keeps all components and PDC data, which eco custom items rely on.
 public final class ItemSerialization {
 
     private ItemSerialization() {

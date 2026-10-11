@@ -93,11 +93,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * {@code /ah category} — explain where the held item would be listed and which rule decided it.
-     * The category rules infer from base material for anything that isn't explicitly pinned, so this
-     * exists to make that inference visible rather than magic.
-     */
+    // /ah category: shows where the held item would be listed and which rule decided it.
     private void inspectCategory(Player player) {
         if (!player.hasPermission("royalauctions.admin")) {
             messages.send(player, "general.no-permission");
@@ -126,11 +122,8 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /**
-     * {@code /ah <username>} — open that seller's active auctions. Only players this server already
-     * knows are looked up: {@code getOfflinePlayer(String)} would block the main thread on a Mojang
-     * request for any unknown name, and anyone can type {@code /ah <random name>}.
-     */
+    // Only players this server already knows are looked up: getOfflinePlayer(String) blocks the
+    // main thread on a Mojang request for an unknown name.
     private void openSellerView(Player viewer, String name) {
         Player online = Bukkit.getPlayerExact(name);
         if (online != null) {
@@ -173,7 +166,6 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 out.add("reload");
             }
             if (sender.hasPermission("royalauctions.admin") && "recovery".startsWith(prefix)) out.add("recovery");
-            // Online player names, so /ah <username> tab-completes.
             for (Player online : Bukkit.getOnlinePlayers()) {
                 if (online.getName().toLowerCase(Locale.ROOT).startsWith(prefix)) {
                     out.add(online.getName());

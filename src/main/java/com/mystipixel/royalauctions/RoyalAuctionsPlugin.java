@@ -39,9 +39,9 @@ import java.util.logging.Level;
 
 public final class RoyalAuctionsPlugin extends JavaPlugin {
 
-    /** bStats project id. Identifies the plugin, not the server, so it is fixed rather than configurable. */
+    // bStats project id: names this plugin, not the server, so it is not configurable.
     private static final int BSTATS_PLUGIN_ID = 32735;
-    /** How long shutdown waits for exchanges already under way before handing them to /ah recovery. */
+    // How long shutdown waits for in-flight exchanges before leaving them to /ah recovery.
     private static final long SHUTDOWN_WAIT_MILLIS = 10_000L;
 
     private PluginConfig config;
@@ -80,8 +80,8 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         this.categories = new CategoryManager(eco, getLogger());
         this.categories.load(config.categoriesSection(), config.categoryOptionsSection());
 
-        // Tiers are eco's rarities. EcoItems' rarities/ folder is the suite-wide registry — a rarity's
-        // items: list can claim items from any eco plugin — so we read it as the single source of truth.
+        // Tiers are eco's rarities. EcoItems' rarities/ folder is the suite-wide registry (a rarity's
+        // items: list can claim items from any eco plugin), so it is the single source of truth.
         this.rarities = new com.mystipixel.royalauctions.hooks.RarityRegistry(
                 getDataFolder().getParentFile(), getLogger());
         this.tiers = new com.mystipixel.royalauctions.tier.TierManager(eco, rarities, getLogger());
@@ -91,28 +91,25 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         try {
             database.init();
         } catch (Exception e) {
-            getLogger().log(Level.SEVERE, "Failed to initialise storage — disabling RoyalAuctions.", e);
+            getLogger().log(Level.SEVERE, "Failed to initialise storage, disabling RoyalAuctions.", e);
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        // Vault is a hard dependency, but the economy *provider* (EssentialsX, CMI, an EcoBits currency
-        // with vault:true, ...) is a separate plugin and can register after we enable. Disabling here
-        // would mean the plugin silently kills itself on a perfectly good server purely because of
-        // plugin load order — so wait for the provider instead. The listener also follows providers
-        // that register after startup.
+        // The economy provider is a separate plugin and may register after we enable, so wait for it
+        // rather than disabling over load order. The listener also follows later provider changes.
         getServer().getPluginManager().registerEvents(new EconomyWaiter(), this);
         if (vault.setup()) {
             finishEnable();
         } else {
             getLogger().warning("No Vault economy provider found yet. RoyalAuctions is waiting for one to"
                     + " register (install an economy plugin, e.g. EssentialsX). /ah is unavailable until then.");
-            // Fallback, in case the provider registered before our listener was active.
+            // In case the provider registered before the listener was active.
             getServer().getScheduler().runTaskLater(this, this::tryLateEnable, 100L);
         }
     }
 
-    /** Everything that needs a working economy. Idempotent — runs once, whenever the provider shows up. */
+    // Everything that needs a working economy. Idempotent: runs once, whenever the provider shows up.
     private void finishEnable() {
         if (fullyEnabled) {
             return;
@@ -161,9 +158,8 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         recoveryTask = getServer().getScheduler().runTaskTimer(this, () -> workers.async(service::recover), 1L, 100L);
         service.refreshActiveCount();
 
-        // The eco plugins register their items in a delayed task (their "Loaded X" lines land after
-        // the server reports Done), so the audit, and the category repair sweep (the browse menu only
-        // repairs what it draws), wait for that. Earlier, custom items would be filed by base material.
+        // eco plugins register their items in a delayed task, so the audit and category repair wait;
+        // run earlier, custom items would be filed by base material.
         getServer().getScheduler().runTaskLater(this, () -> {
             categories.auditCustomItems();
             service.repairAllCategories();
@@ -193,11 +189,8 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         }
     }
 
-    /**
-     * Completes startup if the economy provider registers after we enabled, and afterwards follows
-     * Vault's choice of provider: a higher-priority one (e.g. an EcoBits currency) registering after
-     * EssentialsX would otherwise be ignored and auctions would keep paying into the old one.
-     */
+    // Completes a late startup, then follows Vault's choice of provider so a higher-priority one
+    // registering later (e.g. an EcoBits currency) is not ignored.
     private final class EconomyWaiter implements Listener {
         @EventHandler
         public void onServiceRegister(ServiceRegisterEvent event) {
@@ -241,7 +234,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             pruneTask.cancel();
         }
         if (recoveryTask != null) recoveryTask.cancel();
-        // Finish (or durably decline) every exchange already under way before storage closes.
+        // Finish (or durably decline) every in-flight exchange before storage closes.
         if (workers != null) workers.shutdown(SHUTDOWN_WAIT_MILLIS);
         // Create-session items are already durable. Do not duplicate pending listings on shutdown.
         if (guiManager != null) guiManager.clearCreateSessions();
@@ -264,7 +257,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
                 .runTaskTimer(this, () -> workers.async(service::sweepExpired), interval, interval);
     }
 
-    /** Daily audit-tail prune (first pass 5 minutes after start). Config 0 keeps everything forever. */
+    // Daily prune, first pass 5 minutes after start. 0 in config keeps everything.
     private void schedulePruneTask() {
         if (pruneTask != null) {
             pruneTask.cancel();
@@ -300,7 +293,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         this.tiers.rebind(rarities);
         this.tiers.load(config.tiersSection());
         if (!fullyEnabled) {
-            return; // /ah is not registered until then, but keep this safe to call regardless
+            return; // /ah is not registered until then, but keep this safe to call
         }
         menus.reload();
         loadSearchTerms();
@@ -328,12 +321,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     public PluginConfig pluginConfig() {
         return config;
     }
-    /**
-     * Anonymous usage reporting via bStats.
-     *
-     * <p>Server owners who want no reporting disable it globally in plugins/bStats/config.yml, which
-     * is the mechanism bStats provides; the id itself is fixed because it names this plugin's project.
-     */
+    // Opting out is done globally in plugins/bStats/config.yml.
     private void setupMetrics() {
         Metrics metrics = new Metrics(this, BSTATS_PLUGIN_ID);
         metrics.addCustomChart(new SimplePie("storage_backend",
