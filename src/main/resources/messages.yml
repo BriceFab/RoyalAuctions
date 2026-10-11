@@ -6,13 +6,41 @@ general:
   player-only: "{prefix}&cOnly players can use this command."
   reloaded: "{prefix}&aConfiguration reloaded."
   invalid-number: "{prefix}&cThat's not a valid number."
+  # /ah <player> with a name this server has never seen.
+  unknown-player: "&cNo player named &f{player}&c has played here."
+
+# /ah help. A line that is exactly {search-help} is replaced by search.help below.
+help:
+  - "&6&lAuction House"
+  - "&e/ah &7- open the Auction House menu"
+  - "&e/ah browse &7- browse all listings"
+  - "&e/ah bids &7- auctions you've bid on"
+  - "&e/ah <player> &7- view a player's auctions"
+  - "&e/ah sell &7- open the Create Auction menu"
+  - "{search-help}"
+  - "&e/ah listings &7- manage your listings"
+  - "&e/ah collect &7- claim purchases & returns"
+
+# /ah category (admins): where the held item would be listed and which rule decided it.
+# {category} and {tier} keep their own colour codes.
+inspect:
+  hold-item: "&cHold the item you want to inspect."
+  header: "&6&lItem Category"
+  item: "&7Item:     &f{item}"
+  category: "&7Category: &f{category} &8({id})"
+  matched: "&7Matched:  &f{reason}"
+  tier: "&7Tier:     &f{tier}"
+  no-tier: "&8none"
+  # Shown when the item fell through to the catch-all category.
+  unmatched:
+    - "&8Nothing matched this item — pin it under a category's"
+    - "&8match.items: to place it explicitly."
 
 sell:
   hand-empty: "{prefix}&cYou must be holding an item to sell it."
   usage: "{prefix}&cUsage: &f/ah sell <price>"
   min-price: "{prefix}&cThe minimum listing price is &f{min}&c."
-  # Shown when listings.sellable-categories excludes the item's category. Name the place it
-  # DOES belong, or the player just learns the auction house is broken.
+  # Shown when listings.sellable-categories excludes the item's category. Say where it does belong.
   category-not-allowed: "{prefix}&cThe auction house is for gear — weapons, armour, tools,
     accessories and consumables. &7Sell materials and drops on the bazaar with &f/bz&7."
   max-price: "{prefix}&cThe maximum listing price is &f{max}&c."
@@ -41,14 +69,17 @@ collection:
   claimed: "{prefix}&aClaimed &f{item}&a."
   earnings-claimed: "{prefix}&aCollected &f{amount} &afrom the sale of &f{item}&a."
   no-earnings: "{prefix}&7You have no sale earnings to collect."
+  # Sent a few seconds after join when items or sale earnings are waiting in the collection, for
+  # example an item that was being listed when the player left. Not sent when the "away" summary
+  # below already points at /ah collect. Placeholders: {items} (number of items), {earnings} (money).
+  waiting: "{prefix}&eYou have unclaimed items or earnings. Claim them with &f/ah collect&e."
 
 expiry:
   expired-notify: "{prefix}&e{count} &7of your listings expired and were returned to &f/ah collect&7."
 
 search:
+  # Help line for /ah search in /ah help.
   help: "&e/ah search <query> &7- search by name or enchantment"
-  hint-name: "Name/enchantment"
-  hint-level: "e.g. sharpness V"
   prompt: "{prefix}&eType your search in chat, or type &fcancel&e to go back."
   cancelled: "{prefix}&7Search cancelled."
 
@@ -82,6 +113,8 @@ away:
   won: "{prefix} &6★ Won &f{item}&6 for &f{amount}&6 — claim it with &e/ah collect&6."
   expired: "{prefix} &e{count} listing(s) expired &7— &f/ah collect&7."
   more: "{prefix} &8…and {count} more."
+  # {item} for an event saved without an item name.
+  unknown-item: "an item"
 
 auction:
   won: "{prefix}&aYou won &f{item} &afor &f{amount}&a! Claim it in &f/ah collect&a."
@@ -94,6 +127,10 @@ exchange:
   declined: "{prefix}&eThe exchange could not be completed. Your previous auction and collection state was retained."
   invalid-listing: "{prefix}&cInvalid listing price or duration."
   purchased: "{prefix}&aPurchase completed. Your item is saved in &f/ah collect&a."
+  # Shown when EconGuard refuses a bid or purchase (enforcement.block-flagged-trades on, player flagged).
+  # The other side is not told why: a flag is staff business.
+  restricted-self: "{prefix}&cYour account can't trade right now. Contact staff if you think this is a mistake."
+  restricted-other: "{prefix}&cYou can't trade with {player} right now."
   # Why an exchange was refused, shown through {reason} above.
   reasons:
     already-pending: "An operation is already pending for this item or auction."
@@ -107,8 +144,29 @@ exchange:
     item-changed: "The selected item changed."
     listing-limit: "You have reached your listing limit."
     cannot-cancel: "This listing cannot be cancelled."
+    # The next ones are only seen by staff (claims of old payments and /ah recovery).
+    payment-listing-gone: "The payment's listing no longer exists."
+    unknown-operation: "Unknown operation."
+    not-interrupted: "Only interrupted APPLYING operations older than two minutes can be reconciled."
+    origin-active: "The originating server is still active. Stop that process before reconciliation."
 
 payment-pending: "{prefix}&eAn auction payment is on hold. Staff can check its status; do not repeat the transaction."
+
+# /ah recovery (staff). resolve only runs from the console.
+recovery:
+  usage: "Usage: /ah recovery [page] or /ah recovery resolve <id> <applied|not-applied> confirm"
+  resolve-usage: "Console: /ah recovery resolve <operation-id> <applied|not-applied> confirm"
+  invalid-id: "Invalid operation ID."
+  reconciled: "Reconciled {operation}"
+  # {reason} is one of exchange.reasons, or a database error.
+  refused: "Recovery refused: {reason}"
+  header: "Pending auction operations, page {page} (up to 50): {count}"
+  entry: "{id} {kind} {state} player={player} amount={amount} listing={listing} collection={collection} origin={origin} updated={updated}"
+
+# Buttons of the text input dialog (search, price, custom bid). Escape works like Cancel.
+input:
+  confirm: "&aDone"
+  cancel: "&cCancel"
 
 # Text inside the menus: item names, lore lines and filter labels. Colour codes work; {placeholders}
 # are filled in by the plugin.
@@ -149,6 +207,8 @@ gui:
   bin-price-line: "&6Buy it now: &e{price} coins"
   top-bidder: "&7Top bidder: &f{bidder}"
   leader: "&7Leader: &f{bidder}"
+  # {bidder} in leader while an auction has no bids.
+  no-leader: "-"
   bids: "&7Bids: &f{bids}"
   no-bids: "&7No bids yet"
   ends-in: "&7Ends in: &f{time}"
@@ -178,16 +238,29 @@ gui:
     purchase: "Purchase"
     expired: "Expired listing"
     cancelled: "Cancelled listing"
-  # Text-input dialog titles (joined into one line).
+  # Time left on a listing, and a listing duration that matches none of listings.durations.
+  time:
+    expired: "expired"
+    days: "{days}d {hours}h"
+    hours: "{hours}h {minutes}m"
+    minutes: "{minutes}m {seconds}s"
+    seconds: "{seconds}s"
+    duration: "{hours}h"
+  # How labels are styled in the menus' option lists. {label} is the label from above (or the
+  # tier or duration name). An unselected label has its own colour codes removed first.
+  format:
+    selected: "&e> {label}"
+    unselected: "&8  {label}"
+    filter: "&f{label}"
+    no-tier: "&7{label}"
+    duration-selected: "&a{label}"
+    duration: "&e{label}"
+  # Text input dialog: the first line of each pair is the title, the second sits under it.
+  # (The key is still "sign" so existing translations keep working.)
   sign:
-    search-1: "Search by name"
-    search-2: "blank = show all"
+    search-1: "Search by name or enchantment"
+    search-2: "e.g. sharpness V, blank = show all"
     price-1: "Enter a price"
     price-2: "in numbers"
     bid-1: "Enter your bid"
     bid-2: "amount"
-
-# Buttons of the text-input dialog (search, prices, custom bids).
-input:
-  confirm: "&aDone"
-  cancel: "&cCancel"

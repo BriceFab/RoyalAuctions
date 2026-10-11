@@ -1,9 +1,8 @@
 package com.mystipixel.royalauctions.data;
 
 /**
- * One auction-house event that happened to a player while they were offline — a sale, an outbid, a
- * won auction, expired listings — queued in {@code ra_events} and replayed as a short summary on
- * their next join. For {@code EXPIRED} events {@code amount} carries the listing count, not money.
+ * An event that happened while the player was offline, replayed on their next join. For
+ * {@code EXPIRED} events {@code amount} is the listing count, not money.
  */
 public record OfflineEvent(String type, String item, double amount, long createdAt) {
 

@@ -17,6 +17,7 @@ Part of a suite with [RoyalBank](https://github.com/joogiebear/RoyalBank),
 - [Commands](#commands)
 - [Permissions](#permissions)
 - [Menus](#menus)
+- [Searching](#searching)
 - [Categories](#categories)
 - [Item tiers](#item-tiers)
 - [Confirmations](#confirmations)
@@ -162,14 +163,28 @@ whole list rather than just the current value:
 
 ---
 
-### Searching in other languages
+## Searching
 
-The server only knows English item names, so a search for what a French player sees (`casque`)
-finds nothing. To fix that, copy Minecraft language files into `plugins/RoyalAuctions/lang/` and run
-`/ah reload`. For `fr_fr.json`: in a client's `.minecraft/assets/indexes/<version>.json`, look up
-`minecraft/lang/fr_fr.json` and copy the file under `assets/objects/` that its hash names. A search
-then also finds vanilla items whose name in any loaded language contains the text, ignoring case and
-accents. Items with a custom name are matched on that name, as before.
+A search matches a listing when its name contains the text, or when the item carries an enchantment
+the text names. Add a level to match only that level, as a number or a Roman numeral up to X:
+`sharpness`, `sharp`, `silk touch`, `sharpness 5`, `sharpness V`, `minecraft:sharpness`. Applied
+enchantments and enchanted books both count; lore does not. Enchantment names of 3 letters or more
+match partially (`prot` finds every protection enchantment); shorter text only matches an exact id.
+
+**Other languages.** The server only knows English names, so a search for what a French player sees
+(`casque`, `tranchant`) finds nothing by default. Copy Minecraft language files into
+`plugins/RoyalAuctions/lang/` and run `/ah reload`. For `fr_fr.json`: in a client's
+`.minecraft/assets/indexes/<version>.json`, look up `minecraft/lang/fr_fr.json` and copy the file
+under `assets/objects/` that its hash names. Searches then also match unnamed vanilla items and
+enchantments by their name in any loaded language, ignoring case and accents. Items renamed by the
+seller are matched on that name, as before.
+
+**Upgrading.** Enchantments are stored with each listing when it is created, in the `enchantments`
+column of `ra_listings` (added automatically). Listings created before this version are indexed once,
+in the background, about five seconds after startup; until that finishes, some of them may not show up
+in enchantment searches.
+
+---
 
 ## Categories
 
@@ -425,5 +440,3 @@ Java 21, Maven. `eco` is a `provided` dependency resolved from the Auxilor repo.
 
 Existing file-based payouts and refunds remain recoverable after upgrading. New exchanges use
 the database journal above. See [legacy payment recovery notes](docs/payment-recovery.md).
-
-Search examples, translated names and upgrade behavior: [enchantment search](docs/enchantment-search.md).

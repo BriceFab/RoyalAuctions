@@ -1,6 +1,5 @@
 package com.mystipixel.royalauctions.gui;
 
-import com.mystipixel.royalauctions.util.ItemNames;
 import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
@@ -12,8 +11,11 @@ import com.mystipixel.royalauctions.gui.menu.MenuManager;
 import com.mystipixel.royalauctions.gui.menu.MenuTemplate;
 import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
+import com.mystipixel.royalauctions.search.SearchTerms;
 import com.mystipixel.royalauctions.service.AuctionService;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -22,7 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Opens every menu and runs the dialog text input flows (search / price / bid). */
+/** Opens every menu and runs the text input flows (search / price / bid). */
 public final class GuiManager {
 
     private final JavaPlugin plugin;
@@ -32,16 +34,13 @@ public final class GuiManager {
     private final com.mystipixel.royalauctions.tier.TierManager tiers;
     private final MessageManager messages;
     private final VaultHook vault;
-    private final ItemNames itemNames = new ItemNames();
     private final MenuManager menus;
     private final TextInput textInput;
+    private final SearchTerms searchTerms = new SearchTerms();
 
     private final Map<UUID, CreateSession> createSessions = new ConcurrentHashMap<>();
-    /**
-     * Per-player navigation counter. Every menu request takes a ticket, and a menu that loads its
-     * data asynchronously only opens if no newer request came in meanwhile. Otherwise a slow load
-     * (say, a double-clicked hub button) could pop up over the create screen or a confirmation.
-     */
+    // Per-player navigation counter: an async-loaded menu only opens if no newer request came in,
+    // so a slow load cannot pop up over the create screen or a confirmation.
     private final Map<UUID, Integer> navigation = new ConcurrentHashMap<>();
 
     public GuiManager(JavaPlugin plugin, AuctionService service, PluginConfig config, CategoryManager categories,
@@ -58,9 +57,6 @@ public final class GuiManager {
         this.textInput = textInput;
     }
 
-    // ------------------------------------------------------------------ hub / bids / seller view
-
-    /** The {@code /ah} landing menu. Loads the counts the hub icons display, then opens. */
     public void openHub(Player player) {
         UUID uuid = player.getUniqueId();
         int ticket = ticket(player);
@@ -93,7 +89,6 @@ public final class GuiManager {
         });
     }
 
-    /** {@code /ah <username>} — that seller's active auctions. */
     public void openSeller(Player player, UUID sellerId, String sellerName) {
         int ticket = ticket(player);
         service.loadSellerListings(sellerId, listings -> {
@@ -105,15 +100,12 @@ public final class GuiManager {
         });
     }
 
-    // ------------------------------------------------------------------ browsing / buying / bidding
-
     public void openBrowse(Player player) {
         openBrowse(player, null, null, config.defaultSort(), 0);
     }
 
     public void openBrowse(Player player, String category, String search, SortOrder sort, int page) {
-        // Open first, then fill: the page is fetched asynchronously, and the menu tracks whether it is
-        // still the open inventory before drawing into it.
+        // Open first, then fill: the page arrives async and the menu checks it is still open first.
         ticket(player);
         BrowseGui gui = new BrowseGui(this, player, category, search, sort);
         player.openInventory(gui.getInventory());
@@ -132,11 +124,7 @@ public final class GuiManager {
         playOpen(player, "confirm-purchase");
     }
 
-    /**
-     * Gate a bid behind a confirmation. A bid takes the money immediately (it's held until you're
-     * outbid or the auction ends), so a stray click on "Bid" is a real cost — hence the same
-     * treatment Buy-It-Now already had. Falls straight through when confirmations.bid is off.
-     */
+    /** Gates a bid (which takes the money at once) behind a confirmation, unless confirmations.bid is off. */
     public void confirmBid(Player player, Listing listing, double amount,
                            String category, String search, SortOrder sort, int page) {
         ticket(player);
@@ -149,7 +137,6 @@ public final class GuiManager {
         playOpen(player, "confirm-bid");
     }
 
-    /** Gate a cancellation behind a confirmation. Falls through when confirmations.cancel is off. */
     public void confirmCancel(Player player, Listing listing, int page) {
         ticket(player);
         if (!config.confirmCancel()) {
@@ -172,10 +159,7 @@ public final class GuiManager {
         openCollection(player, 0);
     }
 
-    /**
-     * Back from a bid confirmation: re-read the listing, so the bid screen offers the minimum bid
-     * as it is now rather than the one captured when the confirmation opened.
-     */
+    // Re-reads the listing so the bid screen offers the current minimum bid, not the one captured earlier.
     public void reopenBid(Player player, Listing shown, String category, String search, SortOrder sort, int page) {
         int ticket = ticket(player);
         service.loadListing(shown.id(), fresh -> {
@@ -223,14 +207,11 @@ public final class GuiManager {
         });
     }
 
-    // ------------------------------------------------------------------ create-auction flow
-
     public CreateSession session(UUID uuid) {
         return createSessions.get(uuid);
     }
 
     public void openCreate(Player player) {
-        // Every way into the create flow (hub, browse, /ah sell) comes through here.
         if (!player.hasPermission("royalauctions.sell")) {
             endCreateSession(player, true);
             messages.send(player, "general.no-permission");
@@ -297,8 +278,16 @@ public final class GuiManager {
         openBrowse(player);
     }
 
-    /** All create items are already journalled in collection; shutdown never copies them again. */
+    // Create items are already journalled in collection; shutdown never copies them again.
     public void clearCreateSessions() { createSessions.clear(); }
+
+    public void closeMenus() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.getOpenInventory().getTopInventory().getHolder() instanceof AuctionGui) {
+                player.closeInventory();
+            }
+        }
+    }
 
     public void captureCreateItem(Player player, int slot, ItemStack expected) {
         CreateSession s = createSessions.get(player.getUniqueId());
@@ -325,20 +314,13 @@ public final class GuiManager {
         }
     }
 
-    // ------------------------------------------------------------------ text input: search / price / bid
-
-    private final com.mystipixel.royalauctions.util.EnchantmentSearch enchantmentSearch =
-            new com.mystipixel.royalauctions.util.EnchantmentSearch();
-
-    public com.mystipixel.royalauctions.util.EnchantmentSearch enchantmentSearch() { return enchantmentSearch; }
-
     public void beginSearch(Player player, String category, SortOrder sort) {
         ticket(player);
-        textInput.request(player, List.of("^^^^^^^^^^^^^^^", t("search.hint-name"), t("search.hint-level")), input -> {
-            if (input == null || input.isBlank()) {
-                openBrowse(player, category, null, sort, 0);
+        textInput.request(player, List.of(t("sign.search-1"), t("sign.search-2")), input -> {
+            if (input == null) {
+                if (canReopen(player)) openBrowse(player, category, null, sort, 0);
             } else {
-                openBrowse(player, category, input, sort, 0);
+                openBrowse(player, category, input.isBlank() ? null : input, sort, 0);
             }
         });
     }
@@ -348,14 +330,18 @@ public final class GuiManager {
         if (s == null) {
             return;
         }
-        // Suppress the create screen's return-item-on-close while the dialog is up. Done, Cancel and
-        // Escape all answer, which clears this again; the item is already safe in the collection
-        // if the dialog is never answered (quit, another plugin's screen).
+        // Stops the create screen's close from returning the item while the dialog is up. The prompt
+        // always answers, null included, which clears this again.
         ticket(player);
         s.awaitingPrice(true);
-        textInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.price-1"), t("sign.price-2")), input -> {
+        textInput.request(player, List.of(t("sign.price-1"), t("sign.price-2")), input -> {
             s.awaitingPrice(false);
-            if (input != null && !input.isBlank() && !input.equalsIgnoreCase("cancel")) {
+            if (input == null) {
+                // The item stays in the collection and in the session, so /ah sell picks it up again.
+                if (canReopen(player)) openCreate(player);
+                return;
+            }
+            if (!input.isBlank() && !input.equalsIgnoreCase("cancel")) {
                 Double price = parsePositive(input);
                 if (price == null) {
                     messages.send(player, "general.invalid-number");
@@ -370,8 +356,12 @@ public final class GuiManager {
 
     public void beginBidInput(Player player, Listing listing, String category, String search, SortOrder sort, int page) {
         ticket(player);
-        textInput.request(player, List.of("^^^^^^^^^^^^^^^", t("sign.bid-1"), t("sign.bid-2")), input -> {
-            if (input == null || input.isBlank() || input.equalsIgnoreCase("cancel")) {
+        textInput.request(player, List.of(t("sign.bid-1"), t("sign.bid-2")), input -> {
+            if (input == null) {
+                if (canReopen(player)) openBrowse(player, category, search, sort, page);
+                return;
+            }
+            if (input.isBlank() || input.equalsIgnoreCase("cancel")) {
                 openBrowse(player, category, search, sort, page);
                 return;
             }
@@ -380,14 +370,21 @@ public final class GuiManager {
                 messages.send(player, "general.invalid-number");
                 openBrowse(player, category, search, sort, page);
             } else {
-                // A typed amount is the easiest place to fat-finger an extra zero, so it goes
-                // through the same confirmation as the one-click bid.
+                // A typed amount is easy to fat-finger, so it gets the same confirmation.
                 confirmBid(player, listing, amount, category, search, sort, page);
             }
         });
     }
 
-    // ------------------------------------------------------------------ housekeeping
+    // After a null answer: the player may have quit, died, opened another menu or started a newer
+    // prompt, and none of those should be covered by our menu.
+    private boolean canReopen(Player player) {
+        if (!player.isOnline() || player.isDead() || textInput.isWaiting(player)) {
+            return false;
+        }
+        InventoryType top = player.getOpenInventory().getTopInventory().getType();
+        return top == InventoryType.CRAFTING || top == InventoryType.CREATIVE;
+    }
 
     public void handleQuit(Player player) {
         // Persisted collection and pending operations survive the session. No offline inventory edits.
@@ -399,12 +396,11 @@ public final class GuiManager {
         return navigation.merge(player.getUniqueId(), 1, Integer::sum);
     }
 
-    /** True if the player is online and has not asked for another menu since taking {@code ticket}. */
     private boolean current(Player player, int ticket) {
         return player.isOnline() && navigation.getOrDefault(player.getUniqueId(), 0) == ticket;
     }
 
-    /** Parse a positive amount, accepting k/m/b/t shorthand (e.g. "5k", "50m", "1.5b") and commas. */
+    // Accepts k/m/b/t shorthand ("5k", "50m", "1.5b") and commas.
     private Double parsePositive(String input) {
         if (input == null) {
             return null;
@@ -436,8 +432,6 @@ public final class GuiManager {
         }
     }
 
-    // ------------------------------------------------------------------ accessors
-
     public AuctionService service() {
         return service;
     }
@@ -462,9 +456,9 @@ public final class GuiManager {
         return vault;
     }
 
-    /** Translated vanilla item names, so search works in the language players see. */
-    public ItemNames itemNames() {
-        return itemNames;
+    /** Translated item names and enchantment names that searches also match. */
+    public SearchTerms searchTerms() {
+        return searchTerms;
     }
 
     /** Menu text from {@code messages.yml} ({@code gui.<key>}), placeholders filled in. */
@@ -472,12 +466,28 @@ public final class GuiManager {
         return messages.text("gui." + key, kv);
     }
 
-    /**
-     * Play a menu's configured open sound.
-     *
-     * <p>MenuTemplate has always been able to do this, but nothing called it — so the sounds blocks in
-     * the menu files were decorative and no menu in this plugin ever made a noise.
-     */
+    /** Remaining time, e.g. "1d 3h", "45m 2s", in the gui.time formats. */
+    public String timeLeft(long millis) {
+        if (millis <= 0) {
+            return t("time.expired");
+        }
+        long seconds = millis / 1000;
+        String days = String.valueOf(seconds / 86400);
+        String hours = String.valueOf((seconds % 86400) / 3600);
+        String minutes = String.valueOf((seconds % 3600) / 60);
+        String secs = String.valueOf(seconds % 60);
+        if (seconds >= 86400) {
+            return t("time.days", "days", days, "hours", hours);
+        }
+        if (seconds >= 3600) {
+            return t("time.hours", "hours", hours, "minutes", minutes);
+        }
+        if (seconds >= 60) {
+            return t("time.minutes", "minutes", minutes, "seconds", secs);
+        }
+        return t("time.seconds", "seconds", secs);
+    }
+
     private void playOpen(Player player, String menuId) {
         MenuTemplate template = menus.get(menuId);
         if (template != null) {

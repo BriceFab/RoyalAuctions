@@ -13,11 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * A single seller's active auctions — the {@code /ah <username>} view. Read-only browsing of someone
- * else's listings: click to buy (BIN) or bid (auction), exactly like the main browser.
- * Layout from gui/seller.yml.
- */
+/** One seller's active auctions ({@code /ah <username>}), laid out by gui/seller.yml. */
 public final class SellerGui extends AuctionGui {
 
     private final GuiManager manager;
@@ -81,7 +77,7 @@ public final class SellerGui extends AuctionGui {
                 lore.add(manager.t("bin-price-line", "price", manager.vault().format(listing.price())));
             }
             lore.add("");
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             lore.add("");
             lore.add(listing.sellerId().equals(player.getUniqueId())
                     ? manager.t("own-listing")
@@ -126,7 +122,6 @@ public final class SellerGui extends AuctionGui {
             case OPEN_BROWSE -> manager.openBrowse(player);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative
             }
         }
     }

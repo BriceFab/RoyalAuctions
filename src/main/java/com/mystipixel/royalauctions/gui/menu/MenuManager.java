@@ -1,8 +1,13 @@
 package com.mystipixel.royalauctions.gui.menu;
 
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 /** Loads (and, on first run, writes out) every gui/*.yml menu template. Reloadable. */
 public final class MenuManager {
@@ -29,30 +34,41 @@ public final class MenuManager {
     }
 
     public void reload() {
-        this.hub = load("hub.yml", "&8Auction House", 3);
-        this.browse = load("browse.yml", "&8Auction House", 6);
-        this.bids = load("bids.yml", "&8Your Bids", 6);
-        this.seller = load("seller.yml", "&8Auctions", 6);
-        this.create = load("create.yml", "&8Create Auction", 5);
-        this.duration = load("duration.yml", "&8Auction Duration", 3);
-        this.confirmPurchase = load("confirm-purchase.yml", "&8Confirm Purchase", 3);
-        this.confirmAuction = load("confirm-auction.yml", "&8Confirm Auction", 3);
-        this.confirmBid = load("confirm-bid.yml", "&8Confirm Bid", 3);
-        this.confirmCancel = load("confirm-cancel.yml", "&8Cancel Listing?", 3);
-        this.bid = load("bid.yml", "&8Place Bid", 3);
-        this.collection = load("collection.yml", "&8Collection", 6);
-        this.manage = load("manage.yml", "&8Manage Auctions", 6);
+        this.hub = load("hub.yml");
+        this.browse = load("browse.yml");
+        this.bids = load("bids.yml");
+        this.seller = load("seller.yml");
+        this.create = load("create.yml");
+        this.duration = load("duration.yml");
+        this.confirmPurchase = load("confirm-purchase.yml");
+        this.confirmAuction = load("confirm-auction.yml");
+        this.confirmBid = load("confirm-bid.yml");
+        this.confirmCancel = load("confirm-cancel.yml");
+        this.bid = load("bid.yml");
+        this.collection = load("collection.yml");
+        this.manage = load("manage.yml");
     }
 
-    private MenuTemplate load(String fileName, String defaultTitle, int defaultRows) {
+    private MenuTemplate load(String fileName) {
         File file = new File(plugin.getDataFolder(), "gui/" + fileName);
         if (!file.exists()) {
             plugin.saveResource("gui/" + fileName, false);
         }
-        return MenuTemplate.load(file, defaultTitle, defaultRows);
+        return MenuTemplate.load(file, bundled("gui/" + fileName));
     }
 
-    /** A template by its menu id (the file name without .yml), or null if there is no such menu. */
+    private YamlConfiguration bundled(String path) {
+        try (InputStream in = plugin.getResource(path)) {
+            if (in != null) {
+                return YamlConfiguration.loadConfiguration(new InputStreamReader(in, StandardCharsets.UTF_8));
+            }
+        } catch (IOException e) {
+            plugin.getLogger().warning("Could not read the bundled " + path + ": " + e.getMessage());
+        }
+        return new YamlConfiguration();
+    }
+
+    /** A template by its menu id (the file name without .yml), or null. */
     public MenuTemplate get(String id) {
         if (id == null) {
             return null;

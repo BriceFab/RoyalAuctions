@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Auction Duration — layout from gui/duration.yml; options come from listings.durations in config. */
+/** Auction Duration menu (gui/duration.yml); options come from listings.durations in config. */
 public final class DurationGui extends CreateFlowGui {
 
     private final MenuTemplate template;
@@ -39,7 +39,7 @@ public final class DurationGui extends CreateFlowGui {
             int slot = slots.get(i);
             boolean isSelected = option.hours() == selected;
             inventory.setItem(slot, GuiUtil.button(option.icon(),
-                    (isSelected ? "&a" : "&e") + option.label(),
+                    manager.t(isSelected ? "format.duration-selected" : "format.duration", "label", option.label()),
                     manager.t(isSelected ? "currently-selected" : "click-select")));
             slotToHours.put(slot, option.hours());
         }

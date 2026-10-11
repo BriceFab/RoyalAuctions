@@ -3,10 +3,8 @@ package com.mystipixel.royalauctions.config;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Sanity-checks RoyalAuctions' config on load and on {@code /ah reload}, and warns about values
- * that would silently misbehave. Duration problems are reported while the durations are parsed.
- * Warn-only: the plugin still runs (the parsed {@link PluginConfig} already applies safe fallbacks),
- * but an admin sees exactly what looks wrong.
+ * Warns about config values that would silently misbehave, on load and on {@code /ah reload}.
+ * Warn-only: {@link PluginConfig} already applies safe fallbacks. Durations are checked while parsed.
  */
 public final class ConfigValidator {
 

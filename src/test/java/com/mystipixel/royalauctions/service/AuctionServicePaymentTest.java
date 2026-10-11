@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-/** Public service paths against real SQLite and a rejecting/ambiguous Vault provider. */
+// Public service paths against real SQLite and a rejecting/ambiguous Vault provider.
 class AuctionServicePaymentTest {
     @TempDir Path folder;
     JavaPlugin plugin; AuctionDatabase db; VaultHook vault; EconGuardHook guard;
@@ -47,6 +47,7 @@ class AuctionServicePaymentTest {
         when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(i -> { ((Runnable)i.getArgument(1)).run(); return mock(BukkitTask.class); });
         when(scheduler.runTaskAsynchronously(eq(plugin), any(Runnable.class))).thenAnswer(i -> { ((Runnable)i.getArgument(1)).run(); return mock(BukkitTask.class); });
         when(vault.withdraw(any(), anyDouble())).thenReturn(true); when(config.bidIncrementFor(anyDouble())).thenReturn(10d);
+        when(guard.allow(any())).thenReturn(true);
         open();
     }
     void open() throws Exception {
@@ -138,6 +139,21 @@ class AuctionServicePaymentTest {
         service.createListing(seller, UUID.randomUUID(), mock(ItemStack.class), 50, ListingType.BIN, 60_000, results::add);
         assertEquals(List.of(false), results);
         verifyNoInteractions(vault); assertTrue(db.transactions().pending(50).isEmpty());
+    }
+    @Test void vetoedBuyerCannotBuyOrBid() throws Exception {
+        when(guard.allow(buyerId)).thenReturn(false);
+        Listing bin = seed(ListingType.BIN), auction = seed(ListingType.AUCTION);
+        List<String> done = new ArrayList<>();
+        service.purchase(buyer, bin, () -> done.add("buy")); service.placeBid(buyer, auction, 60, () -> done.add("bid"));
+        assertEquals(List.of("buy", "bid"), done);
+        verify(messages, times(2)).send(buyer, "exchange.restricted-self", new String[0]);
+        verify(vault, never()).withdraw(any(), anyDouble()); assertTrue(db.transactions().pending(50).isEmpty());
+    }
+    @Test void vetoedSellerBlocksTheBuyerWithoutSayingWhy() throws Exception {
+        when(guard.allow(sellerId)).thenReturn(false);
+        service.purchase(buyer, seed(ListingType.BIN), () -> {});
+        verify(messages).send(buyer, "exchange.restricted-other", "player", "seller");
+        verify(vault, never()).withdraw(any(), anyDouble()); assertTrue(db.transactions().pending(50).isEmpty());
     }
     org.bukkit.permissions.PermissionAttachmentInfo permission(String name, boolean value) {
         var info = mock(org.bukkit.permissions.PermissionAttachmentInfo.class);

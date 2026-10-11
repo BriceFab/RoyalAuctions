@@ -3,7 +3,6 @@ package com.mystipixel.royalauctions.command;
 import com.mystipixel.royalauctions.RoyalAuctionsPlugin;
 import com.mystipixel.royalauctions.gui.GuiManager;
 import com.mystipixel.royalauctions.message.MessageManager;
-import com.mystipixel.royalauctions.util.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -93,11 +92,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * {@code /ah category} — explain where the held item would be listed and which rule decided it.
-     * The category rules infer from base material for anything that isn't explicitly pinned, so this
-     * exists to make that inference visible rather than magic.
-     */
+    // /ah category: shows where the held item would be listed and which rule decided it.
     private void inspectCategory(Player player) {
         if (!player.hasPermission("royalauctions.admin")) {
             messages.send(player, "general.no-permission");
@@ -105,7 +100,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         }
         org.bukkit.inventory.ItemStack held = player.getInventory().getItemInMainHand();
         if (held.getType().isAir()) {
-            player.sendMessage(Text.chat("&cHold the item you want to inspect."));
+            messages.send(player, "inspect.hold-item");
             return;
         }
         var categories = gui.categories();
@@ -113,24 +108,20 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         var category = categories.byId(match.categoryId());
         String tier = gui.tiers().tierOf(held);
 
-        player.sendMessage(Text.chat("&6&lItem Category"));
-        player.sendMessage(Text.chat("&7Item:     &f" + categories.keyOf(held)));
-        player.sendMessage(Text.chat("&7Category: &f"
-                + (category == null ? match.categoryId() : category.displayName())
-                + " &8(" + match.categoryId() + ")"));
-        player.sendMessage(Text.chat("&7Matched:  &f" + match.reason()));
-        player.sendMessage(Text.chat("&7Tier:     &f" + (tier == null ? "&8none" : gui.tiers().displayOf(tier))));
+        messages.sendStyled(player, "inspect.header");
+        messages.sendStyled(player, "inspect.item", "item", categories.keyOf(held));
+        messages.sendStyled(player, "inspect.category",
+                "category", category == null ? match.categoryId() : category.displayName(), "id", match.categoryId());
+        messages.sendStyled(player, "inspect.matched", "reason", match.reason());
+        messages.sendStyled(player, "inspect.tier",
+                "tier", tier == null ? messages.text("inspect.no-tier") : gui.tiers().displayOf(tier));
         if (match.reason().startsWith("catch-all") || match.reason().startsWith("strict-items")) {
-            player.sendMessage(Text.chat("&8Nothing matched this item — pin it under a category's"));
-            player.sendMessage(Text.chat("&8match.items: to place it explicitly."));
+            messages.sendLines(player, "inspect.unmatched");
         }
     }
 
-    /**
-     * {@code /ah <username>} — open that seller's active auctions. Only players this server already
-     * knows are looked up: {@code getOfflinePlayer(String)} would block the main thread on a Mojang
-     * request for any unknown name, and anyone can type {@code /ah <random name>}.
-     */
+    // Only players this server already knows are looked up: getOfflinePlayer(String) blocks the
+    // main thread on a Mojang request for an unknown name.
     private void openSellerView(Player viewer, String name) {
         Player online = Bukkit.getPlayerExact(name);
         if (online != null) {
@@ -143,19 +134,11 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                     offline.getName() != null ? offline.getName() : name);
             return;
         }
-        viewer.sendMessage(Text.chat("&cNo player named &f" + name + "&c has played here."));
+        messages.send(viewer, "general.unknown-player", "player", name);
     }
 
     private void sendHelp(Player player) {
-        player.sendMessage(Text.chat("&6&lAuction House"));
-        player.sendMessage(Text.chat("&e/ah &7- open the Auction House menu"));
-        player.sendMessage(Text.chat("&e/ah browse &7- browse all listings"));
-        player.sendMessage(Text.chat("&e/ah bids &7- auctions you've bid on"));
-        player.sendMessage(Text.chat("&e/ah <player> &7- view a player's auctions"));
-        player.sendMessage(Text.chat("&e/ah sell &7- open the Create Auction menu"));
-        messages.send(player, "search.help");
-        player.sendMessage(Text.chat("&e/ah listings &7- manage your listings"));
-        player.sendMessage(Text.chat("&e/ah collect &7- claim purchases & returns"));
+        messages.sendLines(player, "help", "search-help", messages.text("search.help"));
     }
 
     @Override
@@ -173,7 +156,6 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 out.add("reload");
             }
             if (sender.hasPermission("royalauctions.admin") && "recovery".startsWith(prefix)) out.add("recovery");
-            // Online player names, so /ah <username> tab-completes.
             for (Player online : Bukkit.getOnlinePlayers()) {
                 if (online.getName().toLowerCase(Locale.ROOT).startsWith(prefix)) {
                     out.add(online.getName());

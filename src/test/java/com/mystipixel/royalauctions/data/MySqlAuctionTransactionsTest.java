@@ -7,7 +7,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import java.sql.*;
 import java.util.UUID;
 
-/** Same contract suite against a disposable loopback MySQL instance. Never point at production. */
+// Same contract suite against a disposable loopback MySQL instance. Never point at production.
 @EnabledIfEnvironmentVariable(named = "RA_TEST_MYSQL_PORT", matches = "[0-9]+")
 class MySqlAuctionTransactionsTest extends AuctionTransactionsTest {
     private String database;

@@ -6,7 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
-/** Thin wrapper over the Vault economy. All calls are expected on the main thread. */
+/** Vault economy wrapper. Call from the main thread. */
 public final class VaultHook {
 
     // Swapped on the main thread when a higher-priority provider registers after startup.

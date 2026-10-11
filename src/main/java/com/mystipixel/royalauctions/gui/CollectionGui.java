@@ -12,18 +12,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Collection — layout from gui/collection.yml; items fill content-slots. */
+/** Collection menu, laid out by gui/collection.yml. */
 public final class CollectionGui extends AuctionGui {
 
     private final GuiManager manager;
     private final MenuTemplate template;
     private final Player player;
     private final List<CollectionItem> items;
-    /** Sale money waiting to be collected (manual-earnings-collection), shown on the earnings button. */
+    // Sale money waiting to be collected (manual-earnings-collection).
     private final double earnings;
     private final Map<Integer, CollectionItem> slotToItem = new HashMap<>();
     private int page;
-    /** One claim at a time; the menu reopens with fresh contents when it completes. */
+    // One claim at a time; the menu reopens with fresh contents when it completes.
     private boolean claiming;
 
     public CollectionGui(GuiManager manager, Player player, List<CollectionItem> items, double earnings) {
@@ -116,7 +116,6 @@ public final class CollectionGui extends AuctionGui {
             case OPEN_BROWSE -> manager.openBrowse(player);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative
             }
         }
     }

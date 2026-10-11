@@ -11,7 +11,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import java.util.List;
 import java.util.Map;
 
-/** Confirm Purchase (Buy It Now) — layout from gui/confirm-purchase.yml. */
+/** Confirm Purchase (Buy It Now) menu, laid out by gui/confirm-purchase.yml. */
 public final class ConfirmPurchaseGui extends AuctionGui {
 
     private final GuiManager manager;
@@ -65,7 +65,6 @@ public final class ConfirmPurchaseGui extends AuctionGui {
             }
             case OPEN_BROWSE, CANCEL -> manager.openBrowse(player, category, search, sort, page);
             default -> {
-                // decorative
             }
         }
     }

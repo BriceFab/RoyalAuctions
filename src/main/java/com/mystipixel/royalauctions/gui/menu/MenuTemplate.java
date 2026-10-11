@@ -22,47 +22,36 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * A menu loaded from a {@code gui/*.yml} file, authored in the EcoMenus dialect:
+ * A menu loaded from a {@code gui/*.yml} file in the EcoMenus dialect:
  *
  * <pre>
- * title: "&amp;8Auction House"
  * rows: 6
  * mask:
- *   items:
- *     - gray_stained_glass_pane
+ *   items: [ gray_stained_glass_pane ]
  *   pattern:
  *     - "111111111"
- *     - "000000000"     # 0 / letters = dynamic regions, left empty for the GUI to fill
- *     - "CCCCCCCCC"
+ *     - "000000000"     # 0 / letters = dynamic regions the GUI fills
  * regions:
  *   content-slots: "0"
- *   category-slots: "C"
  * slots:
  *   - id: search
  *     item: oak_sign name:"&amp;eSearch"
- *     lore: [ "&amp;7Current: &amp;f%search%" ]
- *     location:
- *       row: 1
- *       column: 1
+ *     row: 1
+ *     column: 1
  *     left-click:
  *       - id: ah_search
  * </pre>
  *
- * Positions are 1-based {@code row}/{@code column} (converted to 0-based indices here). Click effects
- * are authored as {@code id:}s and mapped onto {@link MenuAction}, which is stamped on the rendered
- * item's PDC so the GUI classes can switch on it. Placeholders are {@code %percent%} style.
+ * Rows and columns are 1-based. Placeholders are {@code %percent%} style.
  */
 public final class MenuTemplate {
 
-    /**
-     * One hand-placed slot from the {@code slots:} list. {@code left}/{@code right} come from the
-     * {@code left-click:} / {@code right-click:} effect lists; when a slot declares no right-click
-     * effects, right simply mirrors left (so buttons that don't care about the click type are
-     * unaffected).
-     */
+    // right mirrors left when a slot declares no right-click effects.
     private record ConfiguredSlot(String id, int index, ItemSpec item, List<String> lore,
                                   MenuAction left, MenuAction right) {
     }
+
+    private static final List<String> TEXT_SECTIONS = List.of("type-materials");
 
     private final String title;
     private final int rows;
@@ -81,15 +70,23 @@ public final class MenuTemplate {
         this.source = source;
     }
 
-    // ------------------------------------------------------------------ loading
-
-    public static MenuTemplate load(File file, String defaultTitle, int defaultRows) {
+    /**
+     * {@code bundled} is the jar's copy of the same file. It backs a missing title, rows and the
+     * text-only sections; buttons, filler and regions always come from the server's file alone.
+     */
+    public static MenuTemplate load(File file, YamlConfiguration bundled) {
         FileConfiguration cfg = YamlConfiguration.loadConfiguration(file);
-        String title = cfg.getString("title", defaultTitle);
-        int rows = Math.max(1, Math.min(6, cfg.getInt("rows", defaultRows)));
+        String title = cfg.getString("title", bundled.getString("title", ""));
+        int rows = Math.max(1, Math.min(6, cfg.getInt("rows", bundled.getInt("rows", 6))));
+        YamlConfiguration textDefaults = new YamlConfiguration();
+        for (String section : TEXT_SECTIONS) {
+            if (bundled.contains(section)) {
+                textDefaults.set(section, bundled.get(section));
+            }
+        }
+        cfg.setDefaults(textDefaults);
         int size = rows * 9;
 
-        // --- mask: filler materials + pattern ---
         ItemStack[] mask = new ItemStack[size];
         List<String> maskItems = cfg.getStringList("mask.items");
         List<String> pattern = cfg.getStringList("mask.pattern");
@@ -110,7 +107,6 @@ public final class MenuTemplate {
             }
         }
 
-        // --- regions: name -> the mask character that marks it ---
         Map<String, List<Integer>> regions = new LinkedHashMap<>();
         ConfigurationSection regionSec = cfg.getConfigurationSection("regions");
         if (regionSec != null) {
@@ -122,7 +118,6 @@ public final class MenuTemplate {
             }
         }
 
-        // --- slots: hand-placed buttons ---
         Map<String, ConfiguredSlot> slots = new LinkedHashMap<>();
         List<Map<?, ?>> rawSlots = cfg.getMapList("slots");
         int synthetic = 0;
@@ -147,7 +142,7 @@ public final class MenuTemplate {
                 left = right;                 // right-click-only button
             }
             if (right == MenuAction.NONE) {
-                right = left;                 // no separate right action: any click does the same thing
+                right = left;                 // any click does the same thing
             }
             String id = raw.get("id") != null ? String.valueOf(raw.get("id")) : ("slot" + (synthetic++));
             slots.put(id, new ConfiguredSlot(id, index, ItemSpec.parse(String.valueOf(itemObj)),
@@ -157,7 +152,7 @@ public final class MenuTemplate {
         return new MenuTemplate(title, rows, mask, regions, slots, cfg);
     }
 
-    /** The first recognised effect id in a click list becomes the slot's action. */
+    // The first recognised effect id in a click list becomes the slot's action.
     private static MenuAction firstAction(Object clickList) {
         if (!(clickList instanceof List<?> list)) {
             return MenuAction.NONE;
@@ -173,11 +168,7 @@ public final class MenuTemplate {
         return MenuAction.NONE;
     }
 
-    /**
-     * Resolve a slot's 1-based {@code row}/{@code column} into a 0-based inventory index. Row/column sit
-     * directly on the slot (the eco-menus convention); a legacy nested {@code location: {row, column}}
-     * is still accepted as a fallback.
-     */
+    // 1-based row/column on the slot; a legacy nested location: {row, column} is still accepted.
     private static int slotIndex(Map<?, ?> raw, int size) {
         Object rowObj = raw.get("row");
         Object colObj = raw.get("column");
@@ -208,8 +199,6 @@ public final class MenuTemplate {
         return item;
     }
 
-    // ------------------------------------------------------------------ rendering (API used by the GUIs)
-
     public int size() {
         return rows * 9;
     }
@@ -218,15 +207,14 @@ public final class MenuTemplate {
         return ItemSpec.apply(title, placeholders);
     }
 
-    /** Paint the mask filler, then place every configured button (placeholders + action tags applied). */
+    /** Paints the mask filler, then places every configured button. */
     public void applyStatic(Inventory inv, Map<String, String> placeholders) {
         applyStatic(inv, placeholders, Map.of());
     }
 
     /**
-     * As {@link #applyStatic(Inventory, Map)}, but any lore line that is exactly {@code %key%} for a
-     * key in {@code listPlaceholders} expands into one line per entry — used by the filter buttons to
-     * print their full option list with the current selection marked.
+     * As {@link #applyStatic(Inventory, Map)}, but a lore line that is exactly {@code %key%} for a key
+     * in {@code listPlaceholders} expands into one line per entry.
      */
     public void applyStatic(Inventory inv, Map<String, String> placeholders,
                             Map<String, List<String>> listPlaceholders) {
@@ -259,12 +247,18 @@ public final class MenuTemplate {
         return slot == null ? MenuAction.NONE : slot.left();
     }
 
-    /** Indices of a named dynamic region from the mask (e.g. {@code content-slots}). */
+    /** Indices of a named dynamic region, e.g. {@code content-slots}. */
     public List<Integer> slots(String regionName) {
         return regions.getOrDefault(regionName, List.of());
     }
 
-    /** A configurable list of lore lines at {@code path} (e.g. "listing-lore.auction"), placeholders filled. */
+    /** A single value from the menu file, e.g. "type-materials.bin". */
+    public String text(String path) {
+        String value = source.getString(path);  // with no default given, so the bundled one applies
+        return value == null ? "" : value;
+    }
+
+    /** Lore lines at {@code path} (e.g. "listing-lore.auction"), placeholders filled. */
     public List<String> lore(String path, Map<String, String> placeholders) {
         List<String> raw = source.getStringList(path);
         List<String> out = new ArrayList<>(raw.size());
@@ -290,9 +284,6 @@ public final class MenuTemplate {
         player.playSound(player.getLocation(), sound, volume, pitch);
     }
 
-    // ------------------------------------------------------------------ static helpers (unchanged API)
-
-    /** Build a simple tagged item (used for dynamically-generated buttons, e.g. duration options). */
     public static ItemStack simpleItem(Material material, String name, List<String> lore, MenuAction action) {
         ItemStack item = new ItemStack(material == null || material.isAir() ? Material.STONE : material);
         ItemMeta meta = item.getItemMeta();
@@ -312,7 +303,6 @@ public final class MenuTemplate {
         return item;
     }
 
-    /** Stamp an action onto an existing item (e.g. the deposited sell item). */
     public static ItemStack tag(ItemStack item, MenuAction action) {
         if (item == null) {
             return null;
@@ -325,7 +315,7 @@ public final class MenuTemplate {
         return item;
     }
 
-    /** Read the (left-click) action tagged on a clicked item, or NONE. */
+    /** The left-click action tagged on an item, or NONE. */
     public static MenuAction actionOf(ItemStack item) {
         if (item == null || !item.hasItemMeta()) {
             return MenuAction.NONE;
@@ -334,11 +324,7 @@ public final class MenuTemplate {
         return MenuAction.parse(raw);
     }
 
-    /**
-     * Read the action for a specific click type. Buttons that declare no separate {@code right-click:}
-     * carry the same action on both keys, so this is safe for every menu — only the filter buttons
-     * actually differ between left and right.
-     */
+    /** The action for a click type. Buttons without a separate right-click carry the same action on both. */
     public static MenuAction actionOf(ItemStack item, boolean rightClick) {
         if (item == null || !item.hasItemMeta()) {
             return MenuAction.NONE;
@@ -363,7 +349,7 @@ public final class MenuTemplate {
         }
     }
 
-    /** Holds the plugin's {@link EcoHook} so static template loading can resolve item lookups. */
+    // Lets static template loading resolve item lookups through eco.
     public static final class EcoHookHolder {
         private static EcoHook eco;
 

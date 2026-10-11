@@ -12,12 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Confirm Cancel — layout from gui/confirm-cancel.yml.
- *
- * <p>Cancelling used to happen on a bare right-click in Manage Auctions, one misclick away from
- * pulling a listing you meant to keep. Skippable via {@code confirmations.cancel: false}.
- */
+/** Confirm Cancel menu, laid out by gui/confirm-cancel.yml. Skipped with {@code confirmations.cancel: false}. */
 public final class ConfirmCancelGui extends AuctionGui {
 
     private final GuiManager manager;
@@ -68,7 +63,6 @@ public final class ConfirmCancelGui extends AuctionGui {
             case BACK, CANCEL, OPEN_MANAGE -> manager.openListings(player, page);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative
             }
         }
     }

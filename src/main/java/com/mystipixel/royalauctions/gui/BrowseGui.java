@@ -7,6 +7,7 @@ import com.mystipixel.royalauctions.data.ListingQuery;
 import com.mystipixel.royalauctions.data.ListingPage;
 import com.mystipixel.royalauctions.data.SortOrder;
 import com.mystipixel.royalauctions.gui.menu.MenuTemplate;
+import com.mystipixel.royalauctions.search.SearchTerms;
 import com.mystipixel.royalauctions.tier.Tier;
 import com.mystipixel.royalauctions.util.Text;
 import org.bukkit.Bukkit;
@@ -19,31 +20,27 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * Auction Browser — layout from gui/browse.yml. Categories fill the {@code category-slots} region
- * (column 1), listings fill {@code content-slots}, and the bottom bar carries search / sort / tier /
- * type filters.
- *
- * <p>Three independent filters stack: category, item tier (eco rarity), and listing type (BIN vs
- * auction). Tier and type both cycle through their states on click.
+ * Auction browser, laid out by gui/browse.yml. Category, tier (eco rarity) and listing type filters
+ * stack; tier and type cycle on click.
  */
 public final class BrowseGui extends AuctionGui {
 
-    /** The listing-type filter states, in list order. */
     private enum TypeFilter {
         ALL("filter.all"),
         BIN("filter.bin"),
         AUCTION("filter.auction");
 
-        /** Its label's key under {@code gui.} in messages.yml. */
+        // label key under gui. in messages.yml
         final String key;
 
         TypeFilter(String key) {
             this.key = key;
         }
 
-        /** Step through the list; {@code delta} is +1 (down) or -1 (up), wrapping at both ends. */
+        // delta is +1 (down) or -1 (up), wrapping at both ends
         TypeFilter step(int delta) {
             TypeFilter[] all = values();
             return all[Math.floorMod(ordinal() + delta, all.length)];
@@ -56,16 +53,18 @@ public final class BrowseGui extends AuctionGui {
 
     private String category;
     private String search;
+    private String resolvedSearch;
+    private SearchTerms.Match searchMatch = SearchTerms.Match.NONE;
     private SortOrder sort;
     private int page;
-    /** The page the slots currently show. {@code page} runs ahead of it while a fetch is in flight. */
+    // The page on screen; page runs ahead of it while a fetch is in flight.
     private int shownPage;
 
-    /** null = no tier filter (show all tiers). */
+    // null = no tier filter
     private String tier;
     private TypeFilter typeFilter = TypeFilter.ALL;
 
-    /** Bumped per fetch so a late response for an older view is discarded instead of drawn. */
+    // Bumped per fetch so a late response for an older view is discarded.
     private int latestRequest;
     private final Map<Integer, Listing> slotToListing = new HashMap<>();
     private final Map<Integer, String> slotToCategory = new HashMap<>();
@@ -87,25 +86,21 @@ public final class BrowseGui extends AuctionGui {
         render();
     }
 
-    /** The current filter state as a database query. */
     private ListingQuery query() {
         ListingType typed = switch (typeFilter) {
             case BIN -> ListingType.BIN;
             case AUCTION -> ListingType.AUCTION;
             case ALL -> null;
         };
+        if (!Objects.equals(search, resolvedSearch)) {
+            searchMatch = manager.searchTerms().resolve(search);
+            resolvedSearch = search;
+        }
         return new ListingQuery(category, tier, typed, search, sort,
-                manager.itemNames().listingNamesMatching(search), manager.enchantmentSearch().matching(search));
+                searchMatch.itemNames(), searchMatch.enchantmentTokens());
     }
 
-    /**
-     * Fetch the current page and draw it. Filtering and sorting happen in the database now, so every
-     * filter change and page turn goes through here.
-     *
-     * <p>The result arrives later, by which time the player may have clicked something else or closed
-     * the menu, so each request carries a sequence number and only the newest one is allowed to draw.
-     * Without that, a slow response for page 1 could land after page 2 and silently rewind the view.
-     */
+    // Only the newest request may draw, so a slow page 1 cannot land after page 2 and rewind the view.
     private void render() {
         int requestId = ++latestRequest;
         int perPage = Math.max(1, template.slots("content-slots").size());
@@ -115,7 +110,7 @@ public final class BrowseGui extends AuctionGui {
             }
             int pages = result.pageCount(perPage);
             if (page >= pages) {
-                // Filters shrank the result set out from under the current page — step back and refetch.
+                // Filters shrank the results below the current page: step back and refetch.
                 page = pages - 1;
                 render();
                 return;
@@ -124,7 +119,6 @@ public final class BrowseGui extends AuctionGui {
         });
     }
 
-    /** True while this menu is still the one the player has open. */
     private boolean stillOpen() {
         return player.isOnline() && inventory.equals(player.getOpenInventory().getTopInventory());
     }
@@ -146,10 +140,10 @@ public final class BrowseGui extends AuctionGui {
         placeholders.put("pages", String.valueOf(pages));
         placeholders.put("search", search == null ? manager.t("none") : search);
         placeholders.put("sort", prettySort());
-        placeholders.put("tier", tier == null ? "&f" + manager.t("no-filter") : manager.tiers().displayOf(tier));
+        placeholders.put("tier", tier == null ? manager.t("format.filter", "label", manager.t("no-filter"))
+                : manager.tiers().displayOf(tier));
         placeholders.put("type", manager.t(typeFilter.key));
 
-        // Filter buttons print their whole option list, current selection marked.
         Map<String, List<String>> lists = new HashMap<>();
         lists.put("tier_list", tierList());
         lists.put("type_list", typeList());
@@ -166,7 +160,7 @@ public final class BrowseGui extends AuctionGui {
     }
 
     private ItemStack listingIcon(Listing listing) {
-        // Keep the item's own lore (Hypixel-style) and append the auction info below it.
+        // Keep the item's own lore and append the auction info below it.
         ItemStack icon = listing.item();
         boolean own = listing.sellerId().equals(player.getUniqueId());
 
@@ -176,9 +170,10 @@ public final class BrowseGui extends AuctionGui {
         ph.put("starting_price", GuiUtil.comma(listing.price()));
         ph.put("bids", String.valueOf(listing.bidCount()));
         ph.put("top_bidder", listing.topBidderName() == null ? manager.t("none") : listing.topBidderName());
-        ph.put("ends_in", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
+        ph.put("ends_in", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
         ph.put("bid_label", manager.t(listing.hasBids() ? "label.current-bid" : "label.starting-bid"));
-        ph.put("tier", listing.tier() == null ? "&7" + manager.t("none") : manager.tiers().displayOf(listing.tier()));
+        ph.put("tier", listing.tier() == null ? manager.t("format.no-tier", "label", manager.t("none"))
+                : manager.tiers().displayOf(listing.tier()));
         ph.put("click_hint", manager.t(own ? "own-listing-browse"
                 : (listing.isAuction() ? "click-bid-browse" : "click-purchase")));
 
@@ -190,7 +185,7 @@ public final class BrowseGui extends AuctionGui {
         return GuiUtil.appendLore(icon, lines);
     }
 
-    /** Fallback tooltip used when browse.yml has no listing-lore section. */
+    // Used when browse.yml has no listing-lore section.
     private List<String> defaultListingLore(Listing listing, Map<String, String> ph) {
         List<String> lore = new ArrayList<>();
         lore.add("");
@@ -229,10 +224,7 @@ public final class BrowseGui extends AuctionGui {
         }
     }
 
-    /**
-     * Step the tier filter through the list. The options are [No Filter, tier1, tier2, ...], so
-     * {@code delta} +1 moves down the list and -1 moves up, wrapping at both ends.
-     */
+    // Options are [No Filter, tier1, tier2, ...]; delta +1 moves down, -1 up, wrapping.
     private void stepTier(int delta) {
         List<Tier> tiers = manager.tiers().tiers();
         if (tiers.isEmpty()) {
@@ -244,7 +236,6 @@ public final class BrowseGui extends AuctionGui {
         tier = (next == 0) ? null : tiers.get(next - 1).id();
     }
 
-    /** Index of the current tier in the option list; 0 = No Filter. */
     private int tierIndex(List<Tier> tiers) {
         if (tier == null) {
             return 0;
@@ -254,10 +245,9 @@ public final class BrowseGui extends AuctionGui {
                 return i + 1;
             }
         }
-        return 0; // the tier vanished (config reload) — treat as No Filter
+        return 0; // the tier vanished on reload: treat as No Filter
     }
 
-    /** The tier options as lore lines, with the selected one marked. */
     private List<String> tierList() {
         List<Tier> tiers = manager.tiers().tiers();
         List<String> out = new ArrayList<>();
@@ -266,27 +256,26 @@ public final class BrowseGui extends AuctionGui {
             return out;
         }
         int current = tierIndex(tiers);
-        out.add(marked(current == 0, "&f" + manager.t("no-filter")));
+        out.add(marked(current == 0, manager.t("format.filter", "label", manager.t("no-filter"))));
         for (int i = 0; i < tiers.size(); i++) {
             out.add(marked(current == i + 1, tiers.get(i).displayName()));
         }
         return out;
     }
 
-    /** The listing-type options as lore lines, with the selected one marked. */
     private List<String> typeList() {
         List<String> out = new ArrayList<>();
         for (TypeFilter f : TypeFilter.values()) {
-            out.add(marked(f == typeFilter, "&f" + manager.t(f.key)));
+            out.add(marked(f == typeFilter, manager.t("format.filter", "label", manager.t(f.key))));
         }
         return out;
     }
 
     private String marked(boolean selected, String label) {
-        return selected ? "&e> " + label : "&8  " + stripColor(label);
+        return selected ? manager.t("format.selected", "label", label)
+                : manager.t("format.unselected", "label", stripColor(label));
     }
 
-    /** Unselected options are dimmed, so the current one stands out at a glance. */
     private String stripColor(String s) {
         return s.replaceAll("&[0-9a-fk-or]", "");
     }
@@ -386,7 +375,6 @@ public final class BrowseGui extends AuctionGui {
             case OPEN_COLLECTION -> manager.openCollection(player);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative / filler
             }
         }
     }

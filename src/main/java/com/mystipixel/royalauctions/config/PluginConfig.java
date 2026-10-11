@@ -17,15 +17,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.logging.Level;
 
-/** Typed, reloadable view over config.yml plus the categories/ folder. */
 public final class PluginConfig {
 
-    /** Shipped on a fresh install; the file name is the category id. */
+    // Shipped on a fresh install; the file name is the category id.
     private static final String[] DEFAULT_CATEGORIES = {
             "weapons.yml", "armor.yml", "accessories.yml", "consumables.yml", "blocks.yml", "tools_misc.yml"
     };
 
-    /** One selectable duration on the "Auction Duration" screen. */
     public record DurationOption(String label, int hours, Material icon) {
     }
 
@@ -47,16 +45,6 @@ public final class PluginConfig {
     private double bidMinIncrement;
     private double bidIncrementPercent;
     private long antiSnipeSeconds;
-
-    private String browseTitle;
-    private String collectionTitle;
-    private String listingsTitle;
-    private String confirmTitle;
-    private String createTitle;
-    private String durationTitle;
-    private String confirmAuctionTitle;
-    private String bidTitle;
-    private int guiRows;
 
     private SortOrder defaultSort;
     private long expirySweepTicks;
@@ -103,17 +91,6 @@ public final class PluginConfig {
         this.bidIncrementPercent = bidding.getDouble("increment-percent", 0.05);
         this.antiSnipeSeconds = Math.max(0, bidding.getLong("anti-snipe-seconds", 60));
 
-        ConfigurationSection gui = section(c, "gui");
-        this.browseTitle = gui.getString("browse-title", "&8Auction House");
-        this.collectionTitle = gui.getString("collection-title", "&8Collection");
-        this.listingsTitle = gui.getString("listings-title", "&8Manage Auctions");
-        this.confirmTitle = gui.getString("confirm-title", "&8Confirm Purchase");
-        this.createTitle = gui.getString("create-title", "&8Create Auction");
-        this.durationTitle = gui.getString("duration-title", "&8Auction Duration");
-        this.confirmAuctionTitle = gui.getString("confirm-auction-title", "&8Confirm Auction");
-        this.bidTitle = gui.getString("bid-title", "&8Place Bid");
-        this.guiRows = Math.min(6, Math.max(2, gui.getInt("rows", 6)));
-
         this.defaultSort = SortOrder.fromString(c.getString("default-sort"), SortOrder.NEWEST);
         this.expirySweepTicks = Math.max(1, c.getLong("expiry-sweep-minutes", 5)) * 60L * 20L;
         this.closedRetentionDays = Math.max(0, c.getInt("closed-retention-days", 90));
@@ -131,7 +108,6 @@ public final class PluginConfig {
                 String label = labelObj == null ? "Duration" : String.valueOf(labelObj);
                 int hours = map.get("hours") instanceof Number n ? n.intValue() : 24;
                 if (hours <= 0) {
-                    // Used to be accepted and silently listed as 1 hour; a typo should not do that.
                     plugin.getLogger().warning("Config warning: listings.durations entry '" + label
                             + "' has hours " + hours + "; it must be at least 1. Skipping it.");
                     continue;
@@ -156,15 +132,7 @@ public final class PluginConfig {
         return s != null ? s : plugin.getConfig().createSection("storage");
     }
 
-    /**
-     * The categories, assembled from {@code categories/<name>.yml} — one file per category, the file
-     * name being the category id. Kept out of config.yml so a server with twenty categories doesn't
-     * have a thousand-line config; each file is small, self-contained and easy to diff.
-     *
-     * <p>On first run (or when upgrading from the old inline {@code categories:} block) the folder is
-     * populated automatically — see {@link #migrateCategoriesIfNeeded()} — so nobody loses their
-     * existing setup.
-     */
+    /** The categories from {@code categories/<name>.yml}, one file per category; the file name is the id. */
     public ConfigurationSection categoriesSection() {
         migrateCategoriesIfNeeded();
 
@@ -189,11 +157,7 @@ public final class PluginConfig {
         return combined;
     }
 
-    /**
-     * Create {@code categories/} on first run. If the user still has the legacy inline
-     * {@code categories:} block in config.yml, split it into one file per category rather than
-     * silently ignoring it — an upgrade must never quietly drop someone's categories.
-     */
+    // Creates categories/ on first run, splitting a legacy inline categories: block into files.
     private void migrateCategoriesIfNeeded() {
         File dir = new File(plugin.getDataFolder(), "categories");
         if (dir.isDirectory() && dir.list((d, n) -> n.endsWith(".yml")) != null
@@ -231,18 +195,12 @@ public final class PluginConfig {
             return;
         }
 
-        // Fresh install: ship the defaults.
         for (String name : DEFAULT_CATEGORIES) {
             plugin.saveResource("categories/" + name, false);
         }
         plugin.getLogger().info("Created categories/ with " + DEFAULT_CATEGORIES.length + " default categories.");
     }
 
-    /**
-     * Whether the irreversible actions are gated behind a confirmation screen. Buy-It-Now and Create
-     * always had one; bids and cancellations did not, and both move real value on a single click.
-     * Servers that prefer fewer clicks can switch any of them off.
-     */
     public boolean confirmBid() {
         return plugin.getConfig().getBoolean("confirmations.bid", true);
     }
@@ -260,16 +218,12 @@ public final class PluginConfig {
         return plugin.getConfig().getConfigurationSection("tiers");
     }
 
-    /**
-     * Options for how categories resolve ({@code strict-items}, the startup audit). Kept out of the
-     * {@code categories:} map itself, since every key in there is read as a category id.
-     */
+    // Separate from the categories map, where every key is read as a category id.
     public ConfigurationSection categoryOptionsSection() {
         return plugin.getConfig().getConfigurationSection("category-options");
     }
 
-    /** Compute the listing fee for a given sale price. */
-    /** Never negative: a negative fee would make every listing fail as an invalid amount. */
+    // Never negative: a negative fee would make every listing fail as an invalid amount.
     public double feeFor(double price) {
         return Math.max(0, Math.max(feeMinimum, price * feePercent));
     }
@@ -309,11 +263,8 @@ public final class PluginConfig {
     }
 
     /**
-     * Categories a player may list into, lower-cased. Empty means everything is listable.
-     *
-     * <p>Expressed as categories rather than as its own material list so there is one place that
-     * decides what an item *is* — the browse category and the sell rule can never disagree, and a
-     * new custom item is classified once.
+     * Categories a player may list into, lower-cased. Empty means everything is listable. Uses the
+     * categories so the browse category and the sell rule can never disagree.
      */
     public List<String> sellableCategories() {
         return sellableCategories;
@@ -359,42 +310,6 @@ public final class PluginConfig {
 
     public boolean instantDeliver() {
         return instantDeliver;
-    }
-
-    public String browseTitle() {
-        return browseTitle;
-    }
-
-    public String collectionTitle() {
-        return collectionTitle;
-    }
-
-    public String listingsTitle() {
-        return listingsTitle;
-    }
-
-    public String confirmTitle() {
-        return confirmTitle;
-    }
-
-    public String createTitle() {
-        return createTitle;
-    }
-
-    public String durationTitle() {
-        return durationTitle;
-    }
-
-    public String confirmAuctionTitle() {
-        return confirmAuctionTitle;
-    }
-
-    public String bidTitle() {
-        return bidTitle;
-    }
-
-    public int guiRows() {
-        return guiRows;
     }
 
     public SortOrder defaultSort() {

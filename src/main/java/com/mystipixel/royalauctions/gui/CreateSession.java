@@ -4,8 +4,8 @@ import com.mystipixel.royalauctions.data.ListingType;
 import org.bukkit.inventory.ItemStack;
 
 /**
- * Per-player view of the create-auction flow. The item is held in persistent collection storage;
- * this session only remembers its ID and a display copy after capture is confirmed.
+ * Per-player state of the create-auction flow. The item is held in collection storage; this only
+ * keeps its id and a display copy.
  */
 public final class CreateSession {
 

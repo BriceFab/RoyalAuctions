@@ -1,3 +1,27 @@
+## 2026.41.0 - 2026-10-10
+
+### Features
+- remind players on join of items and earnings waiting in /ah collect (`2be8ae4`)
+- search listings by translated item name and by enchantment (`39fdc2a`)
+- optional manual collection of sale earnings (`b6c4de0`)
+
+### Fixes
+- stop the Back button hiding Search in the browse menu (`dfb9b3e`)
+- honour EconGuard's trade veto on bids and purchases (`0c6fd1c`)
+- make the custom bid prompt translatable (`2846939`)
+- read menu text and exchange reasons from messages.yml (`ca9d0b2`)
+
+### Refactors
+- read all player-facing text from config (`6c9f5b6`)
+- align the text dialog with the shared TextInput (`a0a32dc`)
+- replace the sign input with a native text dialog (`6c742cd`)
+
+### Documentation
+- add AGENTS.md with the suite's development standards (`a057019`)
+
+### Other
+- Close open menus on disable (`9ebaa15`)
+
 ## 2026.40.0 — 2026-10-03
 
 ### 🐛 Fixes

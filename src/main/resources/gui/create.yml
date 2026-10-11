@@ -80,3 +80,8 @@ sounds:
     name: BLOCK_CHEST_OPEN
     volume: 0.7
     pitch: 1.2
+
+# What %type_material% becomes for each listing type.
+type-materials:
+  auction: GOLD_NUGGET
+  bin: EMERALD

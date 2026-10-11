@@ -5,6 +5,8 @@ import com.mystipixel.royalauctions.config.PluginConfig;
 import com.mystipixel.royalauctions.data.*;
 import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
+import com.mystipixel.royalauctions.search.EnchantmentBackfill;
+import com.mystipixel.royalauctions.search.EnchantmentIndex;
 import com.mystipixel.royalauctions.util.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -12,6 +14,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.permissions.PermissionAttachmentInfo;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -38,7 +41,7 @@ public final class AuctionService {
     private Consumer<UUID> eventReady = id -> {};
 
     public void eventNotifier(Consumer<UUID> notifier) { this.eventReady = notifier; }
-    /** Main-thread compatibility worker for file receipts created before the database journal. */
+    /** Retries file receipts created before the database journal. Main thread. */
     public void retryPayments() { legacyPayments.retryRejected(); }
 
     public AuctionService(JavaPlugin plugin, AuctionDatabase db, VaultHook vault, PluginConfig config,
@@ -55,16 +58,16 @@ public final class AuctionService {
                 e -> logError("processing an external effect; check /ah recovery", e), workers::closing);
         plugin.getLogger().info("Auction recovery worker: " + worker);
     }
-    /** Start new work. Refused once shutdown begins; work already under way still completes. */
+    // Refused once shutdown begins; work already under way still completes.
     private void async(Runnable r) { if (!workers.closing()) workers.async(r); }
     private void sync(Runnable r) { workers.sync(r); }
     private void logError(String what, Throwable e) { plugin.getLogger().log(Level.SEVERE, "Error " + what, e); }
     private void tell(Player player, String key, String... values) { if (player.isOnline()) messages.send(player, key, values); }
     private void failure(Player player, Exception e) {
-        if (e instanceof AuctionTransactions.Rejected r) tell(player, "exchange.rejected", "reason",
-                r.key == null ? r.getMessage() : messages.text("exchange.reasons." + r.key, r.values));
+        if (e instanceof AuctionTransactions.Rejected r) tell(player, "exchange.rejected", "reason", reason(r));
         else { logError("reserving an auction operation", e); tell(player, "exchange.unconfirmed"); }
     }
+    private String reason(AuctionTransactions.Rejected r) { return messages.text("exchange.reasons." + r.key, r.values); }
     private void result(Player player, UUID operation, ExternalEffectRunner.Result result) {
         if (result == ExternalEffectRunner.Result.PENDING)
             tell(player, "exchange.pending", "operation", operation.toString());
@@ -75,7 +78,15 @@ public final class AuctionService {
         return player.isOnline() && (amount == 0 || vault.withdraw(player, amount));
     }
 
+    private boolean vetoed(Player player, Listing listing) {
+        if (!econGuard.allow(player.getUniqueId())) tell(player, "exchange.restricted-self");
+        else if (!econGuard.allow(listing.sellerId())) tell(player, "exchange.restricted-other", "player", listing.sellerName());
+        else return false;
+        return true;
+    }
+
     public void placeBid(Player bidder, Listing shown, double amount, Runnable onDone) {
+        if (vetoed(bidder, shown)) { onDone.run(); return; }
         UUID player = bidder.getUniqueId(); String name = bidder.getName();
         async(() -> {
             try {
@@ -98,6 +109,7 @@ public final class AuctionService {
     }
 
     public void purchase(Player buyer, Listing shown, Runnable onDone) {
+        if (vetoed(buyer, shown)) { onDone.run(); return; }
         UUID player = buyer.getUniqueId(); String name = buyer.getName();
         async(() -> {
             try {
@@ -150,7 +162,7 @@ public final class AuctionService {
 
     public void createListing(Player seller, UUID collection, ItemStack item, double price, ListingType type,
                               long duration, Consumer<Boolean> completed) {
-        // The menus reach this too, not only /ah sell, so the permission is enforced here.
+        // Menus reach this too, not only /ah sell, so the permission is enforced here.
         if (!seller.hasPermission("royalauctions.sell")) {
             tell(seller, "general.no-permission"); completed.accept(false); return;
         }
@@ -162,8 +174,8 @@ public final class AuctionService {
         if (!config.canSellCategory(category)) { messages.send(seller, "sell.category-not-allowed", "category", category); completed.accept(false); return; }
         long now = System.currentTimeMillis();
         Listing listing = new Listing(UUID.randomUUID(), seller.getUniqueId(), seller.getName(), ItemSerialization.serialize(item),
-                displayNameOf(item), category, tiers.tierOf(item), type, price, now, Math.addExact(now, duration), ListingStatus.DRAFT, 0, null, null, 0);
-        listing.enchantments(com.mystipixel.royalauctions.util.EnchantmentSearch.index(item));
+                displayNameOf(item), category, tiers.tierOf(item), type, price, now, Math.addExact(now, duration), ListingStatus.DRAFT, 0, null, null, 0,
+                EnchantmentIndex.of(item));
         double fee = config.feeFor(price);
         int limit = listingLimit(seller);
         async(() -> {
@@ -181,9 +193,8 @@ public final class AuctionService {
     }
 
     /**
-     * Active-listing cap for a seller: unlimited for admins, else the highest
-     * {@code royalauctions.limit.<n>} they hold ({@code royalauctions.limit.unlimited} lifts it),
-     * else {@code max-per-player}. Any negative result means unlimited.
+     * Active-listing cap: unlimited for admins, else the highest {@code royalauctions.limit.<n>}
+     * ({@code royalauctions.limit.unlimited} lifts it), else {@code max-per-player}. Negative = unlimited.
      */
     public int listingLimit(Player seller) {
         if (seller.hasPermission("royalauctions.admin")) return -1;
@@ -234,13 +245,7 @@ public final class AuctionService {
         return false;
     }
 
-    // ------------------------------------------------------------------ loaders (async → main callback)
-
-    /**
-     * One page of browse results, fetched off the main thread. The stale-category repair runs over the
-     * rows on this page; a full sweep also happens at startup, so listings the player never scrolls to
-     * still get fixed.
-     */
+    /** One page of browse results, fetched off the main thread; stale categories on it are repaired. */
     public void loadBrowsePage(ListingQuery query, int page, int perPage, Consumer<ListingPage> callback) {
         async(() -> {
             try {
@@ -254,18 +259,25 @@ public final class AuctionService {
         });
     }
 
-    /**
-     * Pass over every active listing, repairing categories renamed in config. Runs after startup
-     * (once eco has registered its items, so custom items are not filed by base material) and
-     * after each reload.
-     */
+    /** Repairs categories renamed in config on every active listing. Run after eco has registered its items. */
     public void repairAllCategories() {
         async(() -> {
             try {
-                db.indexMissingEnchantments();
                 repairStaleCategories(db.activeListings());
             } catch (Exception e) {
                 logError("repairing listing categories", e);
+            }
+        });
+    }
+
+    /** Indexes enchantments of listings from before enchantment search. Once per start, not on reload. */
+    public void backfillEnchantmentIndex() {
+        async(() -> {
+            try {
+                new EnchantmentBackfill(db, data -> EnchantmentIndex.of(ItemSerialization.deserialize(data)),
+                        workers::closing, plugin.getLogger()).run();
+            } catch (SQLException e) {
+                logError("indexing listing enchantments for search", e);
             }
         });
     }
@@ -283,11 +295,7 @@ public final class AuctionService {
         });
     }
 
-    /**
-     * A listing's category is stamped when it's created, so renaming a category in config would
-     * otherwise strand every existing listing under an id no button matches — visible in "All", but
-     * in no category. Re-derive those from the item and persist the fix, once.
-     */
+    // Categories are stamped at creation, so a renamed category strands listings; re-derive and persist.
     private void repairStaleCategories(List<Listing> listings) {
         int repaired = 0;
         for (Listing l : listings) {
@@ -334,7 +342,7 @@ public final class AuctionService {
         });
     }
 
-    /** Active auctions this player has bid on (winning or outbid) — backs the View Bids menu. */
+    /** Active auctions this player has bid on, winning or outbid. */
     public void loadBidListings(UUID bidderId, Consumer<List<Listing>> callback) {
         async(() -> {
             try {
@@ -402,7 +410,7 @@ public final class AuctionService {
         } catch (Exception e) { logError("reading recovery journal", e); }
         finally { recovering.set(false); }
     }
-    /** Deposit a READY payout through the journal, so it moves money at most once. */
+    // Goes through the journal so a READY payout moves money at most once.
     private void pay(AuctionTransactions.Operation o, AuctionTransactions.PaymentContext context,
                      Consumer<ExternalEffectRunner.Result> then) {
         effects.execute(o.id(), () -> vault.deposit(Bukkit.getOfflinePlayer(o.player()), o.amount()), outcome -> {
@@ -462,32 +470,38 @@ public final class AuctionService {
         if (args.length > 1 && args[1].equalsIgnoreCase("resolve")) {
             if (!(sender instanceof org.bukkit.command.ConsoleCommandSender) || args.length != 5
                     || !Set.of("applied", "not-applied").contains(args[3]) || !args[4].equals("confirm")) {
-                sender.sendMessage("Console: /ah recovery resolve <operation-id> <applied|not-applied> confirm"); return;
+                messages.send(sender, "recovery.resolve-usage"); return;
             }
             UUID id;
-            try { id = UUID.fromString(args[2]); } catch (IllegalArgumentException e) { sender.sendMessage("Invalid operation ID."); return; }
+            try { id = UUID.fromString(args[2]); } catch (IllegalArgumentException e) { messages.send(sender, "recovery.invalid-id"); return; }
             async(() -> {
-                try { transactions.resolve(id, args[3].equals("applied"), sender.getName()); sync(() -> sender.sendMessage("Reconciled " + id)); }
-                catch (Exception e) { sync(() -> sender.sendMessage("Recovery refused: " + e.getMessage())); }
+                try { transactions.resolve(id, args[3].equals("applied"), sender.getName()); sync(() -> messages.send(sender, "recovery.reconciled", "operation", id.toString())); }
+                catch (Exception e) { sync(() -> messages.send(sender, "recovery.refused", "reason",
+                        e instanceof AuctionTransactions.Rejected r ? reason(r) : String.valueOf(e.getMessage()))); }
             });
             return;
         }
         int page;
         try { page = args.length == 1 ? 1 : Integer.parseInt(args[1]); if (page < 1 || page > 1_000_000) throw new NumberFormatException(); }
-        catch (NumberFormatException e) { sender.sendMessage("Usage: /ah recovery [page] or /ah recovery resolve <id> <applied|not-applied> confirm"); return; }
+        catch (NumberFormatException e) { messages.send(sender, "recovery.usage"); return; }
         async(() -> {
             try {
-                List<String> lines = new ArrayList<>();
-                for (var o : transactions.pending(50, (page - 1) * 50)) lines.add(o.id() + " " + o.kind() + " " + o.state()
-                        + " player=" + o.player() + " amount=" + o.amount() + " listing=" + o.listing()
-                        + " collection=" + o.collection() + " origin=" + o.worker() + " updated=" + java.time.Instant.ofEpochMilli(o.updated()));
-                sync(() -> { sender.sendMessage("Pending auction operations, page " + page + " (up to 50): " + lines.size()); lines.forEach(sender::sendMessage); });
+                List<String[]> lines = new ArrayList<>();
+                for (var o : transactions.pending(50, (page - 1) * 50)) lines.add(new String[] {
+                        "id", String.valueOf(o.id()), "kind", String.valueOf(o.kind()), "state", String.valueOf(o.state()),
+                        "player", String.valueOf(o.player()), "amount", String.valueOf(o.amount()),
+                        "listing", String.valueOf(o.listing()), "collection", String.valueOf(o.collection()),
+                        "origin", String.valueOf(o.worker()), "updated", String.valueOf(java.time.Instant.ofEpochMilli(o.updated()))});
+                sync(() -> {
+                    messages.send(sender, "recovery.header", "page", String.valueOf(page), "count", String.valueOf(lines.size()));
+                    lines.forEach(values -> messages.send(sender, "recovery.entry", values));
+                });
             } catch (Exception e) { logError("listing recovery operations", e); }
         });
     }
     public void refreshActiveCount() { async(() -> { try { activeCache = db.countActive(); } catch (Exception e) { logError("counting auctions", e); } }); }
     public int activeCache() { return activeCache; }
-    /** Longest name the listings and events tables hold (VARCHAR(256); MySQL rejects longer). */
+    // VARCHAR(256) in the listings and events tables; MySQL rejects longer.
     static final int MAX_NAME_LENGTH = 256;
 
     private String displayNameOf(ItemStack item) {

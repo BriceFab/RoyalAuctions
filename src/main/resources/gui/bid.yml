@@ -39,7 +39,7 @@ slots:
   - id: bid-custom
     item: oak_sign name:"&eCustom Amount"
     lore:
-      - "&7Type your own bid in chat"
+      - "&7Type your own bid"
     row: 2
     column: 7
     left-click:

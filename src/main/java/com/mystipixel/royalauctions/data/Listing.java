@@ -5,10 +5,9 @@ import org.bukkit.inventory.ItemStack;
 import java.util.UUID;
 
 /**
- * One auction listing. {@code itemData} is the source of truth for the item; the decoded
- * {@link ItemStack} is cached lazily. For {@link ListingType#BIN} listings {@code price} is the
- * buy-now price. For {@link ListingType#AUCTION} listings {@code price} is the starting bid and
- * {@code currentBid}/{@code topBidder*} track the leading bid ({@code bidCount == 0} means none yet).
+ * One auction listing. {@code itemData} is the source of truth; the decoded item is cached lazily.
+ * {@code price} is the buy-now price for BIN and the starting bid for AUCTION ({@code bidCount == 0}
+ * means no bids yet).
  */
 public final class Listing {
 
@@ -29,16 +28,21 @@ public final class Listing {
     private final UUID topBidderId;
     private final String topBidderName;
     private final int bidCount;
+    private final String enchantmentIndex;  // null until indexed, see EnchantmentIndex
 
     private transient ItemStack cachedItem;
-    private String enchantments;
-
-    public String enchantments() { return enchantments; }
-    public void enchantments(String value) { enchantments = value; }
 
     public Listing(UUID id, UUID sellerId, String sellerName, byte[] itemData, String displayName,
                    String category, String tier, ListingType type, double price, long createdAt, long expiresAt,
                    ListingStatus status, double currentBid, UUID topBidderId, String topBidderName, int bidCount) {
+        this(id, sellerId, sellerName, itemData, displayName, category, tier, type, price, createdAt, expiresAt,
+                status, currentBid, topBidderId, topBidderName, bidCount, null);
+    }
+
+    public Listing(UUID id, UUID sellerId, String sellerName, byte[] itemData, String displayName,
+                   String category, String tier, ListingType type, double price, long createdAt, long expiresAt,
+                   ListingStatus status, double currentBid, UUID topBidderId, String topBidderName, int bidCount,
+                   String enchantmentIndex) {
         this.id = id;
         this.sellerId = sellerId;
         this.sellerName = sellerName;
@@ -55,6 +59,7 @@ public final class Listing {
         this.topBidderId = topBidderId;
         this.topBidderName = topBidderName;
         this.bidCount = bidCount;
+        this.enchantmentIndex = enchantmentIndex;
     }
 
     public UUID id() {
@@ -81,12 +86,10 @@ public final class Listing {
         return category;
     }
 
-    /** Re-assign after a category rename (see AuctionService's stale-category repair). */
     public void category(String category) {
         this.category = category;
     }
 
-    /** EcoItems rarity id (e.g. "epic"), or null when the item has no tier. */
     public String tier() {
         return tier;
     }
@@ -131,6 +134,10 @@ public final class Listing {
         return bidCount;
     }
 
+    public String enchantmentIndex() {
+        return enchantmentIndex;
+    }
+
     public boolean isAuction() {
         return type == ListingType.AUCTION;
     }
@@ -145,9 +152,8 @@ public final class Listing {
     }
 
     /**
-     * Minimum acceptable next bid given the configured increment. Rounded to six decimal places so
-     * floating-point noise from a percentage increment (110.00000000000001) cannot make the minimum
-     * the menu shows as "110.00" reject a bid of exactly 110.
+     * Minimum acceptable next bid. Rounded to six places so floating-point noise (110.00000000000001)
+     * cannot reject a bid of exactly the "110.00" the menu shows.
      */
     public double nextMinBid(double increment) {
         double minimum = hasBids() ? currentBid + increment : price;

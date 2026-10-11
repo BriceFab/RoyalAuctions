@@ -10,7 +10,7 @@ import java.util.logging.Logger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** Shutdown finishes work already under way instead of dropping it the way Bukkit's scheduler does. */
+// Shutdown finishes work already under way instead of dropping it the way Bukkit's scheduler does.
 class WorkersTest {
 
     private JavaPlugin disabledPlugin() {

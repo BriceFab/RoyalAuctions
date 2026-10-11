@@ -14,9 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * View Bids — every still-active auction the player has bid on, marked TOP BIDDER or OUTBID.
- * Layout from gui/bids.yml. Outbid refunds normally settle immediately; rejected credits remain
- * in the payment journal for retry. The OUTBID label is not proof that a refund was paid.
+ * View Bids: active auctions the player has bid on, marked TOP BIDDER or OUTBID (gui/bids.yml).
+ * OUTBID is not proof a refund was paid; rejected credits stay in the payment journal for retry.
  */
 public final class BidsGui extends AuctionGui {
 
@@ -72,10 +71,10 @@ public final class BidsGui extends AuctionGui {
             lore.add(manager.t("current-bid", "price", manager.vault().format(listing.displayPrice())));
             lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             if (!winning) {
-                lore.add(manager.t("leader", "bidder", listing.topBidderName() == null ? "-" : listing.topBidderName()));
+                lore.add(manager.t("leader", "bidder", listing.topBidderName() == null ? manager.t("no-leader") : listing.topBidderName()));
             }
             lore.add("");
-            lore.add(manager.t("ends-in", "time", GuiUtil.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
+            lore.add(manager.t("ends-in", "time", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             lore.add("");
             lore.add(manager.t(winning ? "winning" : "click-bid-again"));
 
@@ -125,7 +124,6 @@ public final class BidsGui extends AuctionGui {
             case OPEN_BROWSE -> manager.openBrowse(player);
             case CLOSE -> player.closeInventory();
             default -> {
-                // decorative
             }
         }
     }

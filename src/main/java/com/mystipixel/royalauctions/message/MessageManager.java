@@ -9,11 +9,16 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** Loads messages.yml and renders '&'-coloured, placeholder-filled chat components. */
+/**
+ * Loads messages.yml and renders '&'-coloured, placeholder-filled chat components. The jar's copy
+ * backs every key missing from the server's file; the code carries no text of its own.
+ */
 public final class MessageManager {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z0-9_-]+)}");
@@ -33,7 +38,7 @@ public final class MessageManager {
             plugin.saveResource("messages.yml", false);
         }
         this.messages = YamlConfiguration.loadConfiguration(file);
-        // New recovery messages work on upgrade without overwriting the server's translations.
+        // Keys added in an update work without rewriting the server's file.
         try (var stream = plugin.getResource("messages.yml")) {
             if (stream != null) messages.setDefaults(YamlConfiguration.loadConfiguration(
                     new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8)));
@@ -43,18 +48,13 @@ public final class MessageManager {
 
     private String raw(String path) {
         String value = messages.getString(path);
-        if (value == null && path.equals("payment-pending")) {
-            return "&eAn auction payment is on hold. Staff can check its status; do not repeat the transaction.";
-        }
         return value == null ? path : value;
     }
 
     /**
-     * Colour the template first, then drop the values in as literal text. Values include things
-     * players control, such as an anvil-renamed item's name; substituted before colouring, a name
-     * like "&a[Staff] You won 1,000,000" would be rendered as formatting in other players' chat.
-     * One pass, so a value that itself contains "{amount}" is not substituted again. Values keep
-     * the colour of the text around their placeholder.
+     * Colours the template first, then inserts values as literal text, so a player-controlled value
+     * (an anvil-renamed item) can't inject formatting. One pass: a value containing "{amount}" is not
+     * substituted again.
      */
     public Component component(String path, Map<String, String> placeholders) {
         Component message = Text.chat(raw(path).replace("{prefix}", prefix));
@@ -70,16 +70,41 @@ public final class MessageManager {
                 .build());
     }
 
-    /**
-     * Legacy '&' text for menu item names and lore, with {placeholders} filled in. Coloured later by
-     * the menu, so it stays a plain string.
-     */
+    /** Legacy '&' text for menu names and lore, placeholders filled; the menu colours it later. */
     public String text(String path, String... kv) {
         String value = raw(path).replace("{prefix}", prefix);
         for (int i = 0; i + 1 < kv.length; i += 2) {
             value = value.replace("{" + kv[i] + "}", kv[i + 1]);
         }
         return value;
+    }
+
+    /** A list key as '&' text, one entry per line, placeholders filled as in {@link #text}. */
+    public List<String> lines(String path, String... kv) {
+        List<String> out = new ArrayList<>();
+        for (String line : messages.getStringList(path)) {
+            String value = line.replace("{prefix}", prefix);
+            for (int i = 0; i + 1 < kv.length; i += 2) {
+                value = value.replace("{" + kv[i] + "}", kv[i + 1]);
+            }
+            out.add(value);
+        }
+        return out;
+    }
+
+    /** Each line of a list key as its own chat message. */
+    public void sendLines(CommandSender to, String path, String... kv) {
+        for (String line : lines(path, kv)) {
+            to.sendMessage(Text.chat(line));
+        }
+    }
+
+    /**
+     * Like {@link #send(CommandSender, String, String...)}, but the values keep their own colour
+     * codes. Only for values from config (category and tier names), never for player input.
+     */
+    public void sendStyled(CommandSender to, String path, String... kv) {
+        to.sendMessage(Text.chat(text(path, kv)));
     }
 
     public void send(CommandSender to, String path) {
@@ -90,7 +115,7 @@ public final class MessageManager {
         to.sendMessage(component(path, placeholders));
     }
 
-    /** Varargs convenience: send(sender, "sell.success", "item", name, "price", price). */
+    /** Usage: send(sender, "sell.success", "item", name, "price", price). */
     public void send(CommandSender to, String path, String... kv) {
         send(to, path, map(kv));
     }

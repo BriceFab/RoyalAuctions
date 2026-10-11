@@ -14,11 +14,8 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 /**
- * Loads the configured categories and decides which one an item belongs to.
- *
- * <p>Resolution order (see {@link MatchRule}): an explicit {@code items:} pin wins over everything,
- * then the priority-ordered rules, then the catch-all. {@code strict-items} turns the inference off
- * entirely, so only pinned items get a category — for servers that want zero guessing.
+ * Decides which category an item belongs to: an {@code items:} pin wins, then the priority-ordered
+ * rules, then the catch-all. {@code strict-items} turns inference off, so only pinned items match.
  */
 public final class CategoryManager {
 
@@ -29,12 +26,8 @@ public final class CategoryManager {
     private final EcoHook eco;
     private final Logger logger;
 
-    /**
-     * Everything {@link #load} builds, published in one volatile write. Listings are categorised and
-     * repaired off the main thread while {@code /ah reload} runs on it; clearing shared collections in
-     * place let those readers see no categories at all and permanently file listings under the
-     * fallback (or throw ConcurrentModificationException).
-     */
+    // Published in one volatile write: listings are categorised off the main thread while
+    // /ah reload runs, so shared collections must never be cleared in place.
     private record State(List<Category> ordered, Map<String, Category> byId, String fallbackId, boolean strictItems) {
     }
 
@@ -52,7 +45,7 @@ public final class CategoryManager {
         String fallbackId = state.fallbackId();
 
         if (section == null) {
-            logger.warning("No 'categories' section found in config.yml — items will be uncategorised.");
+            logger.warning("No 'categories' section found in config.yml, items will be uncategorised.");
             state = new State(List.of(), Map.of(), fallbackId, strictItems);
             return;
         }
@@ -87,34 +80,30 @@ public final class CategoryManager {
                 + (strictItems ? " (strict-items: only pinned items are categorised)." : "."));
     }
 
-    /** The category id an item should be listed under. Never returns null once categories are loaded. */
+    /** Never null once categories are loaded. */
     public String categorize(ItemStack item) {
         return explain(item).categoryId();
     }
 
-    /**
-     * Resolve an item's category <em>and</em> say why — this backs {@code /ah category}, so the
-     * inference is never a black box to a server admin.
-     */
+    /** An item's category and the rule that chose it, for {@code /ah category}. */
     public CategoryMatch explain(ItemStack item) {
         State state = this.state;
         List<Category> ordered = state.ordered();
         String fallbackId = state.fallbackId();
         String key = keyOf(item);
 
-        // 1. An explicit pin always wins, whatever the priority order says.
+        // An explicit pin wins whatever the priority order says.
         for (Category category : ordered) {
             if (category.rule().pins(key)) {
                 return new CategoryMatch(category.id(), "explicit items: pin (" + key + ")");
             }
         }
 
-        // 2. strict-items: no inference at all — unpinned items go to the catch-all.
+        // strict-items: unpinned items go to the catch-all.
         if (state.strictItems()) {
             return new CategoryMatch(fallbackId, "strict-items is on and " + key + " is not pinned");
         }
 
-        // 3. Inference: eco namespace, then material rules, then the catch-all.
         String namespace = eco.namespaceOf(item);
         for (Category category : ordered) {
             String reason = category.rule().reason(item, namespace);
@@ -125,10 +114,7 @@ public final class CategoryManager {
         return new CategoryMatch(fallbackId, "no rule matched");
     }
 
-    /**
-     * The canonical key for an item: {@code namespace:id} for eco custom items, else
-     * {@code minecraft:<material>}. This is what {@code items:} pins are matched against.
-     */
+    /** {@code namespace:id} for eco items, else {@code minecraft:<material>}; what {@code items:} pins match. */
     public String keyOf(ItemStack item) {
         if (item == null) {
             return null;
@@ -141,11 +127,7 @@ public final class CategoryManager {
         return "minecraft:" + item.getType().name().toLowerCase(Locale.ROOT);
     }
 
-    /**
-     * Every eco item that only matched the catch-all — i.e. the ones where our inference had nothing
-     * to go on. Logged at startup so a server dev knows precisely which items are worth pinning,
-     * instead of having to enumerate every material in the game.
-     */
+    /** Logs every eco item that only matched the catch-all, so admins know which items to pin. */
     public void auditCustomItems() {
         if (state.ordered().isEmpty()) {
             return;
@@ -175,7 +157,7 @@ public final class CategoryManager {
         }
     }
 
-    /** The category id an item that matches nothing lands in (the highest-priority catch-all). */
+    /** Where an item that matches nothing lands (the highest-priority catch-all). */
     public String fallbackId() {
         return state.fallbackId();
     }
@@ -188,7 +170,6 @@ public final class CategoryManager {
         return id == null ? null : state.byId().get(id.toLowerCase(Locale.ROOT));
     }
 
-    /** True if this id is one of the configured categories (used to detect stale/renamed categories). */
     public boolean isKnown(String categoryId) {
         return categoryId != null && state.byId().containsKey(categoryId.toLowerCase(Locale.ROOT));
     }

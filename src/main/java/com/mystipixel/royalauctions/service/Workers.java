@@ -15,13 +15,8 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.logging.Level;
 
 /**
- * Plugin-owned database threads and main-thread queue.
- *
- * <p>Bukkit's scheduler drops queued main-thread tasks on disable and never waits for its async
- * tasks, so an exchange caught mid-flight by a stop or reload was stranded: its durable intent was
- * committed but the effect, or the acknowledgement of an effect that already moved money, never
- * ran. Owning both queues lets {@link #shutdown} run the database work to completion and drain the
- * main-thread steps itself before the connection pool closes.
+ * Plugin-owned database threads and main-thread queue. Bukkit drops queued tasks on disable and never
+ * waits for async ones; owning both lets {@link #shutdown} finish in-flight exchanges before storage closes.
  */
 public final class Workers {
     private final JavaPlugin plugin;
@@ -54,7 +49,7 @@ public final class Workers {
         return closing;
     }
 
-    /** Run blocking database work off the main thread. Tracked, so shutdown waits for it. */
+    /** Blocking database work off the main thread. Tracked, so shutdown waits for it. */
     public void async(Runnable task) {
         inFlight.incrementAndGet();
         try {
@@ -73,7 +68,7 @@ public final class Workers {
         }
     }
 
-    /** Run on the main thread. Queued here rather than in Bukkit, so shutdown can drain it. */
+    /** Main-thread work, queued here rather than in Bukkit so shutdown can drain it. */
     public void sync(Runnable task) {
         main.add(task);
         if (!closing && plugin.isEnabled()) {
@@ -93,9 +88,8 @@ public final class Workers {
     }
 
     /**
-     * Called on the main thread from {@code onDisable}. Stops new exchanges, then alternates between
-     * running queued main-thread steps and waiting for database work until both are empty, so every
-     * exchange that already began is either completed or durably declined before storage closes.
+     * Call on the main thread from {@code onDisable}. Stops new exchanges, then drains main-thread steps
+     * and database work until both are empty, so every started exchange completes or is durably declined.
      */
     public void shutdown(long timeoutMillis) {
         closing = true;

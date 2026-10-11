@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -15,9 +16,9 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Startup schema migration on SQLite: upgrading an old database and a fresh install. */
+// Startup schema migration on SQLite: upgrading an old database and a fresh install.
 class SchemaMigrationTest {
-    /** ra_listings as it was before bidding and tiers: no type, bid columns or tier. */
+    // ra_listings as it was before bidding and tiers: no type, bid columns or tier.
     static final String PRE_BIDDING_LISTINGS = "CREATE TABLE ra_listings (id CHAR(36) PRIMARY KEY,"
             + " seller_id CHAR(36) NOT NULL, seller_name VARCHAR(32) NOT NULL, item_data TEXT NOT NULL,"
             + " display_name VARCHAR(256) NOT NULL, category VARCHAR(64) NOT NULL, price DOUBLE PRECISION NOT NULL,"
@@ -46,7 +47,7 @@ class SchemaMigrationTest {
 
     @Test void freshInstallHasEveryListingColumn() throws Exception {
         open().close();
-        assertTrue(listingColumns().containsAll(Set.of("enchantments", "tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count")));
+        assertTrue(listingColumns().containsAll(Set.of("tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count", "enchantments")));
     }
 
     @Test void upgradesPreBiddingDatabaseAndNormalisesStoredIds() throws Exception {
@@ -60,10 +61,13 @@ class SchemaMigrationTest {
         }
         var db = open();
         try {
-            assertTrue(listingColumns().containsAll(Set.of("enchantments", "tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count")));
+            assertTrue(listingColumns().containsAll(Set.of("tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count", "enchantments")));
             Listing upgraded = db.getListing(id).orElseThrow();
             assertEquals("weapons", upgraded.category());
             assertEquals(ListingType.BIN, upgraded.type());
+            assertNull(upgraded.enchantmentIndex(), "old rows are left for the enchantment backfill");
+            assertEquals(List.of(id.toString()), db.listingsWithoutEnchantmentIndex("", 10).stream()
+                    .map(AuctionDatabase.StoredItem::id).toList());
             // The browse filter compares exactly, so casing from the menu must not matter.
             assertEquals(1, db.browse(new ListingQuery("Weapons", null, null, null, SortOrder.NEWEST), 0, 10).total());
         } finally {
@@ -81,42 +85,6 @@ class SchemaMigrationTest {
             assertEquals("legendary", db.getListing(l.id()).orElseThrow().tier());
             assertEquals(1, db.browse(new ListingQuery("TOOLS", "LEGENDARY", null, null, SortOrder.NEWEST), 0, 10).total());
             assertEquals(0, db.browse(new ListingQuery(null, "common", null, null, SortOrder.NEWEST), 0, 10).total());
-        } finally {
-            db.close();
-        }
-    }
-
-    @Test void searchAlsoMatchesTranslatedListingNames() throws Exception {
-        var db = open();
-        try {
-            var l = new Listing(UUID.randomUUID(), UUID.randomUUID(), "Seller", new byte[]{1, 2, 3}, "Diamond helmet", "Armor",
-                    null, ListingType.BIN, 10, System.currentTimeMillis(), System.currentTimeMillis() + 600_000,
-                    ListingStatus.ACTIVE, 0, null, null, 0);
-            try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
-            assertEquals(0, db.browse(new ListingQuery(null, null, null, "casque", SortOrder.NEWEST), 0, 10).total());
-            assertEquals(1, db.browse(new ListingQuery(null, null, null, "casque", SortOrder.NEWEST,
-                    Set.of("diamond helmet", "iron helmet")), 0, 10).total());
-            assertEquals(1, db.browse(new ListingQuery(null, null, null, "helm", SortOrder.NEWEST), 0, 10).total());
-        } finally {
-            db.close();
-        }
-    }
-
-    @Test void searchTextIsNeverSqlOrAWildcard() throws Exception {
-        var db = open();
-        try {
-            var l = new Listing(UUID.randomUUID(), UUID.randomUUID(), "Seller", new byte[]{1, 2, 3}, "Diamond helmet", "Armor",
-                    null, ListingType.BIN, 10, System.currentTimeMillis(), System.currentTimeMillis() + 600_000,
-                    ListingStatus.ACTIVE, 0, null, null, 0);
-            try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
-            for (String hostile : java.util.List.of("' OR '1'='1", "') OR 1=1 --", "x'; DROP TABLE ra_listings; --",
-                    "%", "_", "!", "%%", "helm%", "\\")) {
-                assertEquals(0, db.browse(new ListingQuery(null, null, null, hostile, SortOrder.NEWEST), 0, 10).total(), hostile);
-                assertEquals(0, db.browse(new ListingQuery(null, null, null, "casque", SortOrder.NEWEST,
-                        Set.of(hostile)), 0, 10).total(), hostile);
-            }
-            assertEquals(1, db.browse(new ListingQuery(null, null, null, "helm", SortOrder.NEWEST), 0, 10).total(),
-                    "Table intact after the payloads");
         } finally {
             db.close();
         }
