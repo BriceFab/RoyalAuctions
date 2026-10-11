@@ -1,3 +1,8 @@
+## 2026.41.2 - 2026-10-11
+
+### Fixes
+- cancel a queued dialog answer when the prompt is dismissed (`2e5b758`)
+
 ## 2026.41.1 - 2026-10-11
 
 ### Fixes
