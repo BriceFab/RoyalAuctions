@@ -1,7 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
 import com.mystipixel.royalauctions.message.MessageManager;
-import com.mystipixel.royalauctions.util.Text;
 import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
@@ -9,7 +8,9 @@ import io.papermc.paper.registry.data.dialog.action.DialogAction;
 import io.papermc.paper.registry.data.dialog.body.DialogBody;
 import io.papermc.paper.registry.data.dialog.input.DialogInput;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -18,6 +19,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -29,37 +31,42 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * One line of text from a player, typed into a native dialog (Paper's Dialog API) with Done and
- * Cancel buttons. Nothing is placed in the world.
+ * Asks a player for one line of text in a Paper dialog with Done and Cancel buttons. Nothing is
+ * placed in the world.
+ *
+ * <p>The callback runs exactly once per request, on the main thread: the cleaned text on Done
+ * (possibly empty), or {@code null} when no answer is coming (Cancel, Escape, quit, death, another
+ * inventory opened, a newer request for the same player, or the timeout). After {@link #shutdown()}
+ * nothing calls back.
  */
 public final class TextInput implements Listener {
 
     static final int MAX_LENGTH = 64;
-    static final long TIMEOUT_TICKS = 20L * 60 * 5;
+    // Paper reports nothing when the client drops a dialog by itself, so unanswered prompts expire
+    static final Duration TIMEOUT = Duration.ofMinutes(5);
 
-    private record Pending(Player player, long token, Consumer<String> callback, Runnable cancelTimeout) {
-    }
-
-    // The server side of a prompt, replaced by a fake in tests.
+    // the server side of a prompt, replaced by a fake in tests
     interface Host {
         boolean enabled();
 
         void nextTick(Runnable task);
 
-        // Returns what cancels the task.
-        Runnable later(Runnable task, long ticks);
+        // returns what cancels the task
+        Runnable later(Duration delay, Runnable task);
 
-        // done gets the raw typed text; cancel runs on Cancel or Escape.
+        // done gets the raw typed text; cancel runs on Cancel or Escape
         void show(Player player, List<String> lines, Consumer<String> done, Runnable cancel);
 
         void close(Player player);
     }
 
+    private record Pending(Player player, long token, Consumer<String> callback, Runnable cancelTimeout) {
+    }
+
     private final Host host;
-    // Main thread only.
-    private final Map<UUID, Pending> pending = new HashMap<>();
-    private long nextToken;
-    // Read from click callbacks, which may arrive off the main thread.
+    private final Map<UUID, Pending> pending = new HashMap<>(); // main thread only
+    private long lastToken;
+    // read from click callbacks, which may arrive off the main thread
     private volatile boolean closed;
 
     public TextInput(JavaPlugin plugin, MessageManager messages) {
@@ -71,37 +78,37 @@ public final class TextInput implements Listener {
     }
 
     /**
-     * Asks for one line of text. The callback runs exactly once, on the main thread: the cleaned text
-     * (possibly empty), or null if no answer is coming (cancel, quit, death, another menu, a newer
-     * prompt, or a 5 minute timeout).
+     * Ask for one line of text. The first line is the dialog title, any others are shown under it.
+     * The callback runs exactly once, on the main thread: the text, or null if no answer is coming.
      */
     public void request(Player player, List<String> titleLines, Consumer<String> callback) {
         if (closed) {
             return;
         }
         UUID id = player.getUniqueId();
-        long token = ++nextToken;
-        Runnable cancelTimeout = host.later(() -> {
+        long token = ++lastToken;
+        Runnable cancelTimeout = host.later(TIMEOUT, () -> {
             if (isCurrent(id, token)) {
                 host.close(player);
                 finish(id, token, null);
             }
-        }, TIMEOUT_TICKS);
+        });
         Pending previous = pending.put(id, new Pending(player, token, callback, cancelTimeout));
         if (previous != null) {
-            // The new prompt is registered first, so the old caller can see it with isWaiting and
-            // leave the screen alone.
+            // registered first, so the old caller sees isWaiting and leaves the screen alone
             previous.cancelTimeout().run();
             previous.callback().accept(null);
+            if (!isCurrent(id, token)) {
+                return;                  // that callback asked again and replaced this prompt
+            }
         }
-        // The dialog replaces the chest menu on screen.
         player.closeInventory();
         host.show(player, titleLines,
                 raw -> answer(id, token, sanitize(raw)),
                 () -> answer(id, token, null));
     }
 
-    /** True while {@code player} has a prompt that has not been answered yet. */
+    /** True while the player has a prompt that has not been answered yet. */
     public boolean isWaiting(Player player) {
         return pending.containsKey(player.getUniqueId());
     }
@@ -111,15 +118,12 @@ public final class TextInput implements Listener {
         closed = true;
         for (Pending p : pending.values()) {
             p.cancelTimeout().run();
-            if (p.player().isOnline()) {
-                host.close(p.player());
-            }
+            host.close(p.player());
         }
         pending.clear();
     }
 
-    // Button clicks may arrive after the prompt was replaced or after a reload; the token and the
-    // enabled check make those do nothing.
+    // button callbacks may not arrive on the main thread, so all state is touched a tick later
     private void answer(UUID id, long token, String text) {
         if (closed || !host.enabled()) {
             return;
@@ -134,19 +138,20 @@ public final class TextInput implements Listener {
 
     private void finish(UUID id, long token, String text) {
         if (!isCurrent(id, token)) {
-            return;
+            return;                      // superseded, expired or already answered
         }
         Pending p = pending.remove(id);
         p.cancelTimeout().run();
         p.callback().accept(text);
     }
 
-    // The client sends nothing when a dialog is dismissed some other way, so these events stand in.
-    // Next tick, so callers see the player gone, dead, or in the other menu.
+    // next tick: these come from inside events, and the caller should see the player gone, dead or
+    // in the other menu before deciding whether to reopen its own
     private void dismiss(UUID id) {
         Pending p = pending.get(id);
         if (p != null && !closed) {
-            host.nextTick(() -> finish(id, p.token(), null));
+            long token = p.token();
+            host.nextTick(() -> finish(id, token, null));
         }
     }
 
@@ -157,15 +162,20 @@ public final class TextInput implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
-        dismiss(event.getEntity().getUniqueId());
+        Player player = event.getEntity();
+        if (isWaiting(player)) {
+            host.close(player);
+            dismiss(player.getUniqueId());
+        }
     }
 
+    // an inventory replaces the dialog on the client, so its buttons can no longer be pressed
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryOpen(InventoryOpenEvent event) {
         dismiss(event.getPlayer().getUniqueId());
     }
 
-    // The dialog's max length is only a client hint; a modified client can send anything.
+    // the dialog's max length is only a client hint; a modified client can send anything
     static String sanitize(String raw) {
         if (raw == null) {
             return "";
@@ -180,6 +190,7 @@ public final class TextInput implements Listener {
     private static final class PaperHost implements Host {
 
         private static final String FIELD = "input";
+        private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
         private final JavaPlugin plugin;
         private final MessageManager messages;
@@ -189,6 +200,17 @@ public final class TextInput implements Listener {
             this.messages = messages;
         }
 
+        // Plugin-specific: how a message key and a colour-coded line are read. Keep the fallbacks
+        // identical to the defaults shipped in messages.yml.
+        private String label(String key, String fallback) {
+            String value = messages.text(key);
+            return value.equals(key) ? fallback : value; // text() returns the key itself when it is missing
+        }
+
+        private static Component color(String line) {
+            return AMP.deserialize(line == null ? "" : line);
+        }
+
         @Override
         public boolean enabled() {
             return plugin.isEnabled();
@@ -196,42 +218,43 @@ public final class TextInput implements Listener {
 
         @Override
         public void nextTick(Runnable task) {
-            Bukkit.getScheduler().runTask(plugin, task);
+            try {
+                Bukkit.getScheduler().runTask(plugin, task);
+            } catch (IllegalPluginAccessException disabledMeanwhile) {
+                // a click raced the disable; there is nobody left to answer
+            }
         }
 
         @Override
-        public Runnable later(Runnable task, long ticks) {
-            BukkitTask scheduled = Bukkit.getScheduler().runTaskLater(plugin, task, ticks);
+        public Runnable later(Duration delay, Runnable task) {
+            BukkitTask scheduled = Bukkit.getScheduler().runTaskLater(plugin, task, delay.toMillis() / 50);
             return scheduled::cancel;
         }
 
         @Override
         public void show(Player player, List<String> lines, Consumer<String> done, Runnable cancel) {
-            String title = lines.isEmpty() ? "" : lines.get(0);
-            List<DialogBody> body = lines.size() < 2 ? List.of()
-                    : List.of(DialogBody.plainMessage(Text.color(String.join("\n", lines.subList(1, lines.size())))));
-            // Lives as long as the prompt's timeout; one use per button.
-            ClickCallback.Options once = ClickCallback.Options.builder()
-                    .uses(1)
-                    .lifetime(Duration.ofMillis(TIMEOUT_TICKS * 50))
-                    .build();
+            Component title = color(lines.isEmpty() ? "" : lines.get(0));
+            List<DialogBody> body = lines.stream().skip(1)
+                    .<DialogBody>map(line -> DialogBody.plainMessage(color(line)))
+                    .toList();
+            ClickCallback.Options once = ClickCallback.Options.builder().uses(1).lifetime(TIMEOUT).build();
             Dialog dialog = Dialog.create(factory -> factory.empty()
-                    .base(DialogBase.builder(Text.color(title))
+                    .base(DialogBase.builder(title)
                             .canCloseWithEscape(true)
                             .afterAction(DialogBase.DialogAfterAction.CLOSE)
                             .body(body)
-                            .inputs(List.of(DialogInput.text(FIELD, Text.color(title))
+                            .inputs(List.of(DialogInput.text(FIELD, title)
                                     .labelVisible(false)
                                     .maxLength(MAX_LENGTH)
                                     .build()))
                             .build())
-                    // A confirmation dialog's exit action is its second button, so Escape counts as Cancel.
+                    // a confirmation dialog's exit action is its second button, so Escape counts as Cancel
                     .type(DialogType.confirmation(
-                            ActionButton.builder(Text.color(messages.text("input.confirm")))
+                            ActionButton.builder(color(label("input.confirm", "&aDone")))
                                     .action(DialogAction.customClick(
                                             (response, audience) -> done.accept(response.getText(FIELD)), once))
                                     .build(),
-                            ActionButton.builder(Text.color(messages.text("input.cancel")))
+                            ActionButton.builder(color(label("input.cancel", "&cCancel")))
                                     .action(DialogAction.customClick((response, audience) -> cancel.run(), once))
                                     .build())));
             player.showDialog(dialog);
@@ -239,7 +262,9 @@ public final class TextInput implements Listener {
 
         @Override
         public void close(Player player) {
-            player.closeDialog();
+            if (player.isOnline()) {
+                player.closeDialog();
+            }
         }
     }
 }
