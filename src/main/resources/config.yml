@@ -1,6 +1,7 @@
 # RoyalAuctions configuration
 
-# Storage type: SQLITE (single server, no setup) or MYSQL (network / shared).
+# Storage type: SQLITE (no setup) or MYSQL. Each server needs its own database for now: sharing one
+# between servers is planned but not safe yet, because servers can overwrite each other's data.
 storage:
   type: SQLITE
   # Only used when type: MYSQL
