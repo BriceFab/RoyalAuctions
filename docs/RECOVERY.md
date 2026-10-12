@@ -1,7 +1,7 @@
 # Auction reliability and recovery
 
 This update reserves an auction before attempting a charge. Expiry, bids, purchases, and
-cancellation share the same database reservation, including across servers using MySQL.
+cancellation share the same database reservation.
 An accepted bid becomes the leader only after Vault reports a successful withdrawal and that
 result is saved. Expiry then reads the current deadline and funded leader again.
 

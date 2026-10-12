@@ -353,7 +353,7 @@ get the button (effect `ah_claim_earnings`, placeholder `%earnings%`).
 
 ```yaml
 storage:
-  type: SQLITE            # or MYSQL for a network / shared setup
+  type: SQLITE            # or MYSQL
   sqlite-file: auctions.db
   mysql:
     host: localhost
@@ -368,6 +368,10 @@ storage:
 HikariCP over JDBC. Listings, collection items, bids and notifications are stored alongside a
 persistent operation journal, resource reservations, and operator reconciliation history.
 MySQL requires InnoDB tables; SQLite uses WAL with full synchronous commits.
+
+MySQL is supported, but each server needs its own database for now. Sharing one database between
+servers (a hub and island servers, say) is planned and not safe yet, because two servers can overwrite
+each other's data.
 
 Items are stored with Paper's `serializeAsBytes()`, which preserves the **full** NBT/component data
 — so eco custom items survive a listing intact with no per-plugin code, and even survive the eco

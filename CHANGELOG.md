@@ -1,3 +1,13 @@
+## 2026.41.2 - 2026-10-11
+
+### Fixes
+- cancel a queued dialog answer when the prompt is dismissed (`2e5b758`)
+
+## 2026.41.1 - 2026-10-11
+
+### Fixes
+- re-check the player is still the same session after async work (`3e7d07e`)
+
 ## 2026.41.0 - 2026-10-10
 
 ### Features
