@@ -334,9 +334,13 @@ public final class AuctionService {
             if (categories.isKnown(l.category())) {
                 continue;
             }
-            String fresh = categories.categorize(l.item());
-            l.category(fresh);
-            repaired.put(l.id(), fresh);
+            try {
+                String fresh = categories.categorize(l.item());
+                l.category(fresh);
+                repaired.put(l.id(), fresh);
+            } catch (Exception e) {
+                logError("categorising listing " + l.id(), e);
+            }
         }
         if (repaired.isEmpty()) {
             return;
