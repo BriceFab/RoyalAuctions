@@ -354,6 +354,8 @@ get the button (effect `ah_claim_earnings`, placeholder `%earnings%`).
 ```yaml
 storage:
   type: SQLITE            # or MYSQL
+  refresh-seconds: 5      # MYSQL: how often notices from other servers are checked
+  server-id: ""           # empty: generated and kept in server-id.txt
   sqlite-file: auctions.db
   mysql:
     host: localhost
@@ -367,11 +369,31 @@ storage:
 
 HikariCP over JDBC. Listings, collection items, bids and notifications are stored alongside a
 persistent operation journal, resource reservations, and operator reconciliation history.
-MySQL requires InnoDB tables; SQLite uses WAL with full synchronous commits.
+MySQL requires InnoDB tables; SQLite uses WAL with full synchronous commits. The schema version is
+kept in `ra_schema_version` and the job leases in `ra_lease`.
 
-MySQL is supported, but each server needs its own database for now. Sharing one database between
-servers (a hub and island servers, say) is planned and not safe yet, because two servers can overwrite
-each other's data.
+### Several servers, one auction house
+
+Point every server at the same MySQL/MariaDB database and they share one auction house: a hub and
+island servers all see the same listings, bids and collections.
+
+- **Every exchange reserves the listing in the database first.** A bid, purchase, cancel or expiry
+  takes a lock row for the listing before any money moves, so two servers can't sell the same item
+  or accept two bids against the same price. A deadlock between servers is retried.
+- **Notices follow the player.** When an item sells or a bid is beaten on one server, the seller or
+  bidder gets the notice on whichever server they're on, within `refresh-seconds`. The "new bid on
+  your item" line still only reaches a seller on the server where the bid was placed.
+- **One server runs the expiry sweep and the daily prune.** They run on whichever server holds the
+  lease (`ra_lease`); if it stops, another takes over within two sweep intervals.
+- **Servers that start together take turns migrating the schema** (`ra_schema_version`). From this
+  version on, an older RoyalAuctions refuses to start against a database a newer one has migrated.
+- **The economy must be shared too.** Payments and refunds move Vault money on the server that
+  processes them, which may not be the one the player is on. If each server has its own balances,
+  money ends up on the wrong server; use a network-wide economy such as RoyalBank.
+- **Keep the `categories/` files the same on every server.** A server that doesn't know a listing's
+  category files it again by its own rules, and two servers with different rules keep refiling.
+- **Keep the servers' clocks in sync** (NTP). Listing end times are written with the clock of the
+  server that created or extended them.
 
 Items are stored with Paper's `serializeAsBytes()`, which preserves the **full** NBT/component data
 — so eco custom items survive a listing intact with no per-plugin code, and even survive the eco

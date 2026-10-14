@@ -15,11 +15,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
 /**
@@ -43,6 +45,7 @@ public final class OfflineEventNotifier implements Listener {
     private final Set<UUID> delivering = ConcurrentHashMap.newKeySet();
     private final Set<UUID> again = ConcurrentHashMap.newKeySet();
     private final Set<UUID> remind = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean polling = new AtomicBoolean();
 
     private record Waiting(int items, double earnings) {
         static final Waiting NOTHING = new Waiting(0, 0);
@@ -76,6 +79,24 @@ public final class OfflineEventNotifier implements Listener {
         workers.sync(() -> {
             Player player = Bukkit.getPlayer(id);
             if (player != null && player.isOnline()) start(id);
+        });
+    }
+
+    /**
+     * Delivers events another server queued for players online here (a sale or outbid that happened
+     * there). Call on the main thread; a poll still running makes the next one skip.
+     */
+    public void pollOnline(Collection<UUID> online) {
+        if (online.isEmpty() || workers.closing() || !polling.compareAndSet(false, true)) return;
+        List<UUID> players = List.copyOf(online);
+        workers.async(() -> {
+            try {
+                db.playersWithEvents(players).forEach(this::notifyOnline);
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.WARNING, "Could not check for auction events from other servers", e);
+            } finally {
+                polling.set(false);
+            }
         });
     }
 

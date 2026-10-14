@@ -1,5 +1,8 @@
 package com.mystipixel.royalauctions.data;
 
+import com.mystipixel.royalcommon.storage.Dialect;
+import com.mystipixel.royalcommon.storage.TxRunner;
+
 import javax.sql.DataSource;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
@@ -27,12 +30,24 @@ public final class AuctionTransactions {
         public Rejected(String key, String... values) { super(key); this.key = key; this.values = values; }
     }
     private final DataSource source;
-    public AuctionTransactions(DataSource source) { this.source = source; }
+    private final TxRunner runner;
+    public AuctionTransactions(TxRunner runner) { this.runner = runner; this.source = runner.dataSource(); }
 
+    /** Checks the tables are transactional; they are created by the schema migration. */
     public void init() throws SQLException {
         try (Connection c = source.getConnection(); Statement s = c.createStatement()) {
-            boolean mysql = c.getMetaData().getDatabaseProductName().equalsIgnoreCase("MySQL");
-            String engine = mysql ? " ENGINE=InnoDB" : "";
+            if (Dialect.of(c) != Dialect.MYSQL) return;
+            try (ResultSet rs = s.executeQuery("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() "
+                    + "AND TABLE_NAME IN ('ra_listings','ra_collection','ra_bids','ra_events','ra_operations','ra_operation_locks','ra_workers','ra_reconciliations')")) {
+                while (rs.next()) if (!"InnoDB".equalsIgnoreCase(rs.getString("ENGINE")))
+                    throw new SQLException("RoyalAuctions requires InnoDB transactions: convert " + rs.getString("TABLE_NAME") + " before starting.");
+            }
+        }
+    }
+
+    void createTables(Connection c) throws SQLException {
+        try (Statement s = c.createStatement()) {
+            String engine = Dialect.of(c) == Dialect.MYSQL ? " ENGINE=InnoDB" : "";
             s.executeUpdate("CREATE TABLE IF NOT EXISTS ra_operations (id CHAR(36) PRIMARY KEY, "
                     + "kind VARCHAR(16) NOT NULL, state VARCHAR(16) NOT NULL, listing_id CHAR(36), "
                     + "collection_id CHAR(36), player_id CHAR(36) NOT NULL, player_name VARCHAR(32), "
@@ -46,13 +61,6 @@ public final class AuctionTransactions {
             createIndex(s, "idx_ra_operations_recovery", "ra_operations(state,updated_at)");
             createIndex(s, "idx_ra_operations_listing", "ra_operations(listing_id,state)");
             createIndex(s, "idx_ra_locks_operation", "ra_operation_locks(operation_id)");
-            if (mysql) {
-                try (ResultSet rs = s.executeQuery("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() "
-                        + "AND TABLE_NAME IN ('ra_listings','ra_collection','ra_bids','ra_events','ra_operations','ra_operation_locks','ra_workers','ra_reconciliations')")) {
-                    while (rs.next()) if (!"InnoDB".equalsIgnoreCase(rs.getString("ENGINE")))
-                        throw new SQLException("RoyalAuctions requires InnoDB transactions: convert " + rs.getString("TABLE_NAME") + " before starting.");
-                }
-            }
         }
     }
 
@@ -64,13 +72,9 @@ public final class AuctionTransactions {
     }
 
     @FunctionalInterface private interface Work<T> { T run(Connection c) throws SQLException; }
+    // Retried whole on a deadlock between servers, so work must not touch anything outside the transaction.
     private <T> T transaction(Work<T> work) throws SQLException {
-        try (Connection c = source.getConnection()) {
-            c.setAutoCommit(false);
-            try { T result = work.run(c); c.commit(); return result; }
-            catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
-            finally { c.setAutoCommit(true); }
-        }
+        return runner.inTransaction(tx -> work.run(tx.connection()));
     }
     private static PreparedStatement statement(Connection c, String sql, Object... values) throws SQLException {
         PreparedStatement ps = c.prepareStatement(sql);

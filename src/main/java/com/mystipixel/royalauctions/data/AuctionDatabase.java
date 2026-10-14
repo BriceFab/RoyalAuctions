@@ -1,5 +1,8 @@
 package com.mystipixel.royalauctions.data;
 
+import com.mystipixel.royalcommon.storage.Lease;
+import com.mystipixel.royalcommon.storage.SchemaVersion;
+import com.mystipixel.royalcommon.storage.TxRunner;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.configuration.ConfigurationSection;
@@ -11,9 +14,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,15 +35,21 @@ public final class AuctionDatabase {
         SQLITE, MYSQL
     }
 
+    static final int SCHEMA_VERSION = 1;
+    private static final int CHUNK = 500;
+
     private final File dataFolder;
     private final ConfigurationSection config;
     private final Logger logger;
 
     private Type type;
     private HikariDataSource dataSource;
+    private TxRunner runner;
     private AuctionTransactions transactions;
 
     public AuctionTransactions transactions() { return transactions; }
+
+    public Type type() { return type; }
 
     public AuctionDatabase(File dataFolder, ConfigurationSection storageConfig, Logger logger) {
         this.dataFolder = dataFolder;
@@ -77,15 +90,40 @@ public final class AuctionDatabase {
         }
 
         this.dataSource = new HikariDataSource(hikari);
-        if (type == Type.SQLITE) {
-            try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
-                s.execute("PRAGMA journal_mode=WAL");
+        try {
+            if (type == Type.SQLITE) {
+                try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
+                    s.execute("PRAGMA journal_mode=WAL");
+                }
             }
+            runner = new TxRunner(dataSource);
+            transactions = new AuctionTransactions(runner);
+            migrate();
+            transactions.init();
+        } catch (SQLException | RuntimeException e) {
+            dataSource.close();
+            throw e;
         }
-        createSchema();
-        transactions = new AuctionTransactions(dataSource);
-        transactions.init();
         logger.info("Connected to " + type + " storage.");
+    }
+
+    // Servers sharing a MySQL database that start together take turns here; the second finds nothing to do.
+    private void migrate() throws SQLException {
+        int before = new SchemaVersion(runner, "ra").ensure(SCHEMA_VERSION, (c, dialect, from, to) -> {
+            if (from < 1) {
+                createSchema(c);
+                transactions.createTables(c);
+            }
+        });
+        if (before < SCHEMA_VERSION) {
+            logger.info("Database schema migrated from version " + before + " to " + SCHEMA_VERSION + ".");
+        }
+        lease("").createTable();
+    }
+
+    /** A lease on this database, for the jobs only one server should run (expiry and pruning). */
+    public Lease lease(String serverId) {
+        return new Lease(runner, "ra", serverId);
     }
 
     private void registerDriver(String driverClass) {
@@ -108,8 +146,8 @@ public final class AuctionDatabase {
         return type == Type.MYSQL ? "LONGTEXT" : "TEXT";
     }
 
-    private void createSchema() throws SQLException {
-        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
+    private void createSchema(Connection c) throws SQLException {
+        try (Statement st = c.createStatement()) {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS ra_listings ("
                     + "id CHAR(36) PRIMARY KEY,"
                     + "seller_id CHAR(36) NOT NULL,"
@@ -533,6 +571,30 @@ public final class AuctionDatabase {
             ps.setLong(5, createdAt);
             ps.executeUpdate();
         }
+    }
+
+    /** Which of these players have queued events, e.g. ones an exchange on another server left for them. */
+    public Set<UUID> playersWithEvents(Collection<UUID> players) throws SQLException {
+        Set<UUID> out = new HashSet<>();
+        List<UUID> all = new ArrayList<>(players);
+        try (Connection c = dataSource.getConnection()) {
+            for (int from = 0; from < all.size(); from += CHUNK) {
+                List<UUID> chunk = all.subList(from, Math.min(all.size(), from + CHUNK));
+                String sql = "SELECT DISTINCT player_id FROM ra_events WHERE player_id IN ("
+                        + String.join(",", Collections.nCopies(chunk.size(), "?")) + ")";
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    for (int i = 0; i < chunk.size(); i++) {
+                        ps.setString(i + 1, chunk.get(i).toString());
+                    }
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            out.add(UUID.fromString(rs.getString(1)));
+                        }
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /**

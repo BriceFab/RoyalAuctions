@@ -14,7 +14,9 @@ import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import com.mystipixel.royalauctions.search.SearchTerms;
 import com.mystipixel.royalauctions.service.AuctionService;
+import com.mystipixel.royalauctions.service.OfflineEventNotifier;
 import com.mystipixel.royalauctions.service.Workers;
+import com.mystipixel.royalcommon.storage.ServerId;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -25,6 +27,8 @@ import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.enchantments.Enchantment;
 
 import java.io.File;
+import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -60,6 +64,8 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     private BukkitTask expiryTask;
     private BukkitTask recoveryTask;
     private BukkitTask pruneTask;
+    private BukkitTask eventPollTask;
+    private String serverId;
     private AuctionPlaceholderExpansion placeholderExpansion;
     private boolean fullyEnabled;
 
@@ -89,7 +95,12 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
 
         this.database = new AuctionDatabase(getDataFolder(), config.storageSection(), getLogger());
         try {
+            serverId = ServerId.resolve(config.storageSection().getString("server-id", ""), getDataFolder().toPath());
             database.init();
+        } catch (IOException | IllegalArgumentException e) {
+            getLogger().log(Level.SEVERE, "Could not work out this server's id (storage.server-id), disabling RoyalAuctions.", e);
+            getServer().getPluginManager().disablePlugin(this);
+            return;
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "Failed to initialise storage, disabling RoyalAuctions.", e);
             getServer().getPluginManager().disablePlugin(this);
@@ -141,9 +152,17 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         loadSearchTerms();
 
         getServer().getPluginManager().registerEvents(new AuctionGuiListener(guiManager), this);
-        var notifier = new com.mystipixel.royalauctions.service.OfflineEventNotifier(this, database, messages, vault, config, workers);
+        var notifier = new OfflineEventNotifier(this, database, messages, vault, config, workers);
         getServer().getPluginManager().registerEvents(notifier, this);
         service.eventNotifier(notifier::notifyOnline);
+        service.lease(database.lease(serverId));
+        if (database.type() == AuctionDatabase.Type.MYSQL) {
+            // a sale or outbid on another server leaves its notice in the database for whoever is online here
+            long period = 20L * Math.max(1, config.storageSection().getInt("refresh-seconds", 5));
+            eventPollTask = getServer().getScheduler().runTaskTimer(this, () -> notifier.pollOnline(
+                    getServer().getOnlinePlayers().stream().map(org.bukkit.entity.Player::getUniqueId).toList()), period, period);
+            getLogger().info("Sharing the auction database as server " + serverId + ".");
+        }
 
         AuctionCommand command = new AuctionCommand(this, guiManager, messages);
         if (getCommand("auctionhouse") != null) {
@@ -234,8 +253,10 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             pruneTask.cancel();
         }
         if (recoveryTask != null) recoveryTask.cancel();
+        if (eventPollTask != null) eventPollTask.cancel();
         // Finish (or durably decline) every in-flight exchange before storage closes.
         if (workers != null) workers.shutdown(SHUTDOWN_WAIT_MILLIS);
+        if (service != null) service.releaseLeases();
         // Create-session items are already durable. Do not duplicate pending listings on shutdown.
         if (guiManager != null) guiManager.clearCreateSessions();
         // Last: drained callbacks can reopen menus, and with sessions cleared the close refunds nothing.
@@ -270,6 +291,9 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             long cutoff = System.currentTimeMillis()
                     - config.closedRetentionDays() * 24L * 60L * 60L * 1000L;
             try {
+                if (!service.holdsLease(AuctionService.PRUNE_JOB, Duration.ofHours(1))) {
+                    return;
+                }
                 int removed = database.pruneClosed(cutoff);
                 if (removed > 0) {
                     getLogger().info("Pruned " + removed + " closed listing(s) older than "
