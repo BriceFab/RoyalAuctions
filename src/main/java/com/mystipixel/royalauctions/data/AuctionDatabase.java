@@ -38,6 +38,8 @@ public final class AuctionDatabase {
 
     static final int SCHEMA_VERSION = 2;
     private static final int CHUNK = 500;
+    // A server that has not heartbeat for this long is gone; its row only mattered for /ah recovery.
+    private static final long WORKER_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1000;
 
     private final File dataFolder;
     private final ConfigurationSection config;
@@ -126,6 +128,7 @@ public final class AuctionDatabase {
                             ? "ra_operations(state, note(32))" : "ra_operations(state, note)");
                     createIndex(st, "idx_ra_operations_player", "ra_operations(player_id, state)");
                     createIndex(st, "idx_ra_bids_bidder_listing", "ra_bids(bidder_id, listing_id)");
+                    createIndex(st, "idx_ra_events_created", "ra_events(created_at)");
                 }
             }
         });
@@ -590,7 +593,8 @@ public final class AuctionDatabase {
     }
 
     /**
-     * Prunes closed listings older than {@code cutoff}, orphaned bids and stale offline events.
+     * Prunes closed listings older than {@code cutoff}, orphaned bids, stale offline events, finished
+     * operations and servers that stopped heartbeating a week ago.
      * Returns how many listings went. EXPIRED/CANCELLED rows have no closure stamp, so
      * {@code expires_at} stands in for it (at most one listing duration off).
      */
@@ -610,7 +614,47 @@ public final class AuctionDatabase {
             ps.setLong(1, cutoff);
             ps.executeUpdate();
         }
+        pruneFinishedOperations(cutoff);
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM ra_workers WHERE heartbeat < ?")) {
+            ps.setLong(1, System.currentTimeMillis() - WORKER_RETENTION_MILLIS);
+            ps.executeUpdate();
+        }
         return removed;
+    }
+
+    // A batch per connection, so exchanges get the (single, on SQLite) connection between batches.
+    // Operations an operator reconciled stay with their audit record.
+    private void pruneFinishedOperations(long cutoff) throws SQLException {
+        String select = "SELECT id FROM ra_operations WHERE state='DONE' AND updated_at < ? AND NOT EXISTS "
+                + "(SELECT 1 FROM ra_reconciliations r WHERE r.operation_id = ra_operations.id) LIMIT " + CHUNK;
+        while (true) {
+            List<String> ids = new ArrayList<>();
+            try (Connection c = dataSource.getConnection()) {
+                try (PreparedStatement ps = c.prepareStatement(select)) {
+                    ps.setLong(1, cutoff);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) ids.add(rs.getString(1));
+                    }
+                }
+                if (ids.isEmpty()) {
+                    return;
+                }
+                c.setAutoCommit(false);
+                try (PreparedStatement ps = c.prepareStatement("DELETE FROM ra_operations WHERE id=? AND state='DONE'")) {
+                    for (String id : ids) {
+                        ps.setString(1, id);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                    c.commit();
+                } catch (SQLException e) { c.rollback(); throw e; }
+                finally { c.setAutoCommit(true); }
+            }
+            if (ids.size() < CHUNK) {
+                return;
+            }
+        }
     }
 
     public void addEvent(UUID player, String type, String item, double amount, long createdAt)

@@ -351,6 +351,19 @@ class AuctionTransactionsTest {
         assertTrue(db.getListing(draft.id()).isPresent()); assertEquals(2, count("ra_collection"));
     }
 
+    @Test void pruningDropsFinishedOperationsButKeepsOpenAndReconciledOnes() throws Exception {
+        var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
+        var payout = tx.pending(50).getFirst();
+        var held = seed(ListingType.BIN); var o = tx.reserveBuy(held.id(), bob, "Bob", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); sql("UPDATE ra_operations SET updated_at=0 WHERE id=?", o.id());
+        tx.heartbeat(worker); sql("UPDATE ra_workers SET heartbeat=0"); tx.resolve(o.id(), true, "console");
+        db.pruneClosed(Long.MAX_VALUE);
+        assertEquals(READY, tx.get(payout.id()).state());
+        assertEquals(DONE, tx.get(o.id()).state(), "reconciled operations stay with their audit record");
+        assertEquals(3, count("ra_operations"), "only the finished purchase went");
+        assertEquals(0, count("ra_workers"));
+    }
+
     @Test void twoFinalizersCannotRepeatRefundOrBidHistory() throws Exception {
         var l = seed(ListingType.AUCTION); complete(bid(l, alice, 100), true);
         var o = bid(l, bob, 110); assertTrue(tx.begin(o.id(), worker)); tx.acknowledge(o.id(), true);
