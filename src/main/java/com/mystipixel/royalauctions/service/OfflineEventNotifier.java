@@ -123,6 +123,7 @@ public final class OfflineEventNotifier implements Listener {
             waiting = joined ? waiting(id) : Waiting.NOTHING;
         } catch (Exception e) {
             plugin.getLogger().log(Level.WARNING, "Could not read the join notice (offline events, collection) for " + id, e);
+            polledEventId = -1;                  // let the next poll try again
             finish(id);
             return;
         }
@@ -151,6 +152,7 @@ public final class OfflineEventNotifier implements Listener {
                     db.deleteEvents(shown);
                 } catch (Exception e) {
                     plugin.getLogger().log(Level.WARNING, "Could not clear delivered offline auction events", e);
+                    polledEventId = -1;
                 } finally {
                     finish(id);
                 }
