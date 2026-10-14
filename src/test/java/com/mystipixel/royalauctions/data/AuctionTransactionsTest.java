@@ -331,6 +331,15 @@ class AuctionTransactionsTest {
         var context = tx.paymentContext(l.id()); assertEquals(alice, context.buyer()); assertFalse(context.auction());
     }
 
+    @Test void combinedCompletionKeepsTheAcknowledgementWhenFinishingFails() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); failInserts();
+        assertThrows(SQLException.class, () -> tx.complete(o.id(), true));
+        assertEquals(APPLIED, tx.get(o.id()).state(), "a known payment is not left looking interrupted");
+        sql("DROP TRIGGER fail_delivery"); tx.finish(o.id());
+        assertEquals(DONE, tx.get(o.id()).state()); assertEquals(ListingStatus.SOLD, current(l).status());
+    }
+
     @Test void pruningPreservesUnfinishedSellerPaymentAndDraftCustody() throws Exception {
         var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
         var payout = tx.pending(50).getFirst();

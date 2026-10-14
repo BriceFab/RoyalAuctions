@@ -251,45 +251,63 @@ public final class AuctionTransactions {
         finish(id);
     }
 
+    /**
+     * {@link #acknowledge} and {@link #finish} in one commit. If finishing fails, the acknowledgement is
+     * still written on its own, so a known outcome is never left looking ambiguous.
+     */
+    public void complete(UUID id, boolean success) throws SQLException {
+        try {
+            transaction(c -> {
+                update(c, "UPDATE ra_operations SET state=?,updated_at=? WHERE id=? AND state='APPLYING'",
+                        success ? State.APPLIED : State.FAILED, System.currentTimeMillis(), id);
+                return finish(c, id);
+            });
+        } catch (SQLException e) {
+            try { acknowledge(id, success); } catch (SQLException ack) { e.addSuppressed(ack); }
+            throw e;
+        }
+    }
+
     /** Claim the terminal state inside the same transaction as all database effects. Idempotent. */
     public void finish(UUID id) throws SQLException {
-        transaction(c -> {
-            // Acquire the write lock before reading, including on SQLite and MySQL REPEATABLE READ.
-            int changed = update(c, "UPDATE ra_operations SET updated_at=updated_at+1 WHERE id=? AND state IN ('APPLIED','FAILED')", id);
-            if (changed == 0) return null;
-            Operation o = get(c, id);
-            if (o.state == State.FAILED) {
-                if (o.kind == Kind.PAYOUT) {
-                    update(c, "UPDATE ra_operations SET state='READY',updated_at=? WHERE id=?", System.currentTimeMillis(), id);
-                    return null;
-                }
-                if (o.kind == Kind.CREATE) update(c, "DELETE FROM ra_listings WHERE id=? AND status='DRAFT'", o.listing);
-                if (o.kind == Kind.CAPTURE) update(c, "DELETE FROM ra_collection WHERE id=?", o.collection);
-            } else switch (o.kind) {
-                case BID -> {
-                    Listing l = listing(c, o.listing);
-                    update(c, "UPDATE ra_listings SET current_bid=?,top_bidder_id=?,top_bidder_name=?,bid_count=bid_count+1,expires_at=? WHERE id=?",
-                            o.amount, o.player, o.playerName, o.expiry, o.listing);
-                    update(c, "INSERT INTO ra_bids(listing_id,bidder_id,bidder_name,amount,created_at) VALUES (?,?,?,?,?)",
-                            o.listing, o.player, o.playerName, o.amount, o.created);
-                    if (l.hasBids()) payout(c, key("refund/" + o.id), l, l.topBidderId(), l.topBidderName(), l.currentBid(), "OUTBID");
-                }
-                case BUY -> settle(c, listing(c, o.listing), o.player, o.playerName, o.amount);
-                case CREATE -> {
-                    update(c, "UPDATE ra_listings SET status='ACTIVE' WHERE id=? AND status='DRAFT'", o.listing);
-                    update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
-                }
-                case CLAIM -> update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
-                case PAYOUT -> {
-                    Listing l = listing(c, o.listing);
-                    event(c, o.player, o.note, l.displayName(), o.amount);
-                }
-                case CAPTURE -> { /* The captured item is now available in collection. */ }
+        transaction(c -> finish(c, id));
+    }
+    private static Void finish(Connection c, UUID id) throws SQLException {
+        // Acquire the write lock before reading, including on SQLite and MySQL REPEATABLE READ.
+        int changed = update(c, "UPDATE ra_operations SET updated_at=updated_at+1 WHERE id=? AND state IN ('APPLIED','FAILED')", id);
+        if (changed == 0) return null;
+        Operation o = get(c, id);
+        if (o.state == State.FAILED) {
+            if (o.kind == Kind.PAYOUT) {
+                update(c, "UPDATE ra_operations SET state='READY',updated_at=? WHERE id=?", System.currentTimeMillis(), id);
+                return null;
             }
-            update(c, "UPDATE ra_operations SET state='DONE',updated_at=? WHERE id=?", System.currentTimeMillis(), id);
-            release(c, id);
-            return null;
-        });
+            if (o.kind == Kind.CREATE) update(c, "DELETE FROM ra_listings WHERE id=? AND status='DRAFT'", o.listing);
+            if (o.kind == Kind.CAPTURE) update(c, "DELETE FROM ra_collection WHERE id=?", o.collection);
+        } else switch (o.kind) {
+            case BID -> {
+                Listing l = listing(c, o.listing);
+                update(c, "UPDATE ra_listings SET current_bid=?,top_bidder_id=?,top_bidder_name=?,bid_count=bid_count+1,expires_at=? WHERE id=?",
+                        o.amount, o.player, o.playerName, o.expiry, o.listing);
+                update(c, "INSERT INTO ra_bids(listing_id,bidder_id,bidder_name,amount,created_at) VALUES (?,?,?,?,?)",
+                        o.listing, o.player, o.playerName, o.amount, o.created);
+                if (l.hasBids()) payout(c, key("refund/" + o.id), l, l.topBidderId(), l.topBidderName(), l.currentBid(), "OUTBID");
+            }
+            case BUY -> settle(c, listing(c, o.listing), o.player, o.playerName, o.amount);
+            case CREATE -> {
+                update(c, "UPDATE ra_listings SET status='ACTIVE' WHERE id=? AND status='DRAFT'", o.listing);
+                update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
+            }
+            case CLAIM -> update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
+            case PAYOUT -> {
+                Listing l = listing(c, o.listing);
+                event(c, o.player, o.note, l.displayName(), o.amount);
+            }
+            case CAPTURE -> { /* The captured item is now available in collection. */ }
+        }
+        update(c, "UPDATE ra_operations SET state='DONE',updated_at=? WHERE id=?", System.currentTimeMillis(), id);
+        release(c, id);
+        return null;
     }
     private static void event(Connection c, UUID player, String type, String name, double amount) throws SQLException {
         update(c, "INSERT INTO ra_events(player_id,type,item,amount,created_at) VALUES (?,?,?,?,?)", player, type, name, amount, System.currentTimeMillis());

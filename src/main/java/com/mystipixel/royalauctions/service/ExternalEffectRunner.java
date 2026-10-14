@@ -52,8 +52,7 @@ public final class ExternalEffectRunner {
                 }
                 database.execute(() -> {
                     try {
-                        transactions.acknowledge(operation, applied);
-                        transactions.finish(operation);
+                        transactions.complete(operation, applied);
                     } catch (Exception e) {
                         errors.accept(e);
                         main.execute(() -> callback.accept(Result.PENDING));
