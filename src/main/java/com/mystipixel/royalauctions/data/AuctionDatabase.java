@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.data;
 
+import com.mystipixel.royalcommon.storage.Dialect;
 import com.mystipixel.royalcommon.storage.Lease;
 import com.mystipixel.royalcommon.storage.SchemaVersion;
 import com.mystipixel.royalcommon.storage.TxRunner;
@@ -120,6 +121,10 @@ public final class AuctionDatabase {
                     createIndex(st, "idx_ra_listings_status_price", "ra_listings(status, price)");
                     createIndex(st, "idx_ra_listings_status_category_created", "ra_listings(status, category, created_at)");
                     createIndex(st, "idx_ra_listings_status_category_price", "ra_listings(status, category, price)");
+                    // The recovery poll steps over held sale payouts by note; a prefix keeps MySQL's key short.
+                    createIndex(st, "idx_ra_operations_state_note", dialect == Dialect.MYSQL
+                            ? "ra_operations(state, note(32))" : "ra_operations(state, note)");
+                    createIndex(st, "idx_ra_operations_player", "ra_operations(player_id, state)");
                 }
             }
         });

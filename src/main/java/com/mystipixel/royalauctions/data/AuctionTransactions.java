@@ -362,11 +362,18 @@ public final class AuctionTransactions {
     }
     /** {@code holdSales}: leave READY sale payouts for their seller to collect (see {@link #unclaimedEarnings}). */
     public List<Operation> recoverable(int limit, boolean holdSales) throws SQLException {
+        long ready = System.currentTimeMillis() - 60_000, prepared = System.currentTimeMillis() - 120_000;
+        // One index range per branch. READY rows are all payouts, so the ranges either side of 'SOLD'
+        // skip the held sales without reading them.
+        String readyBranch = holdSales
+                ? "SELECT * FROM ra_operations WHERE state='READY' AND note<'SOLD' AND updated_at<? UNION ALL "
+                + "SELECT * FROM ra_operations WHERE state='READY' AND note>'SOLD' AND updated_at<?"
+                : "SELECT * FROM ra_operations WHERE state='READY' AND updated_at<?";
+        Object[] args = holdSales ? new Object[] {prepared, ready, ready, limit} : new Object[] {prepared, ready, limit};
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
-                "SELECT * FROM ra_operations WHERE state IN ('APPLIED','FAILED') OR (state='READY' AND updated_at<?"
-                        + (holdSales ? " AND NOT (kind='PAYOUT' AND note='SOLD')" : "") + ") "
-                        + "OR (state='PREPARED' AND updated_at<?) ORDER BY updated_at,id LIMIT ?",
-                System.currentTimeMillis() - 60_000, System.currentTimeMillis() - 120_000, limit); ResultSet rs = ps.executeQuery()) {
+                "SELECT * FROM ra_operations WHERE state IN ('APPLIED','FAILED') UNION ALL "
+                        + "SELECT * FROM ra_operations WHERE state='PREPARED' AND updated_at<? UNION ALL "
+                        + readyBranch + " ORDER BY updated_at,id LIMIT ?", args); ResultSet rs = ps.executeQuery()) {
             List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;
         }
     }
