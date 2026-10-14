@@ -5,16 +5,20 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.sql.*;
+import java.util.List;
 import java.util.UUID;
 
 // Same contract suite against a disposable loopback MySQL instance. Never point at production.
+// RA_TEST_MYSQL_USER and RA_TEST_MYSQL_PASSWORD default to root with no password; the user needs CREATE DATABASE.
 @EnabledIfEnvironmentVariable(named = "RA_TEST_MYSQL_PORT", matches = "[0-9]+")
 class MySqlAuctionTransactionsTest extends AuctionTransactionsTest {
     private String database;
     private String rootUrl() { return "jdbc:mysql://127.0.0.1:" + System.getenv("RA_TEST_MYSQL_PORT") + "/"; }
     private Connection connect(String database) throws SQLException {
-        return DriverManager.getConnection(rootUrl() + database + "?useSSL=false&allowPublicKeyRetrieval=true", "root", "");
+        return DriverManager.getConnection(rootUrl() + database + "?useSSL=false&allowPublicKeyRetrieval=true", user(), password());
     }
+    private static String user() { return System.getenv().getOrDefault("RA_TEST_MYSQL_USER", "root"); }
+    private static String password() { return System.getenv().getOrDefault("RA_TEST_MYSQL_PASSWORD", ""); }
     @Override @BeforeEach void open() throws Exception {
         if (database == null) {
             database = "ra_tx_test_" + UUID.randomUUID().toString().replace("-", "");
@@ -25,7 +29,7 @@ class MySqlAuctionTransactionsTest extends AuctionTransactionsTest {
     @Override YamlConfiguration config() {
         var config = new YamlConfiguration(); config.set("type", "MYSQL");
         config.set("mysql.host", "127.0.0.1"); config.set("mysql.port", Integer.parseInt(System.getenv("RA_TEST_MYSQL_PORT")));
-        config.set("mysql.database", database); config.set("mysql.username", "root"); config.set("mysql.password", "");
+        config.set("mysql.database", database); config.set("mysql.username", user()); config.set("mysql.password", password());
         config.set("mysql.properties", "useSSL=false&allowPublicKeyRetrieval=true");
         return config;
     }
@@ -40,6 +44,30 @@ class MySqlAuctionTransactionsTest extends AuctionTransactionsTest {
         sql("ALTER TABLE ra_operations ENGINE=MyISAM");
         SQLException error = Assertions.assertThrows(SQLException.class, () -> tx.init());
         Assertions.assertTrue(error.getMessage().contains("requires InnoDB"));
+    }
+    @Test void serversStartingTogetherOnAnEmptyDatabaseMigrateItOnce() throws Exception {
+        String fresh = database + "_start";
+        try (var c = connect(""); var s = c.createStatement()) { s.executeUpdate("CREATE DATABASE " + fresh); }
+        var config = config(); config.set("mysql.database", fresh);
+        List<AuctionDatabase> servers = new java.util.ArrayList<>();
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(4)) {
+            var start = new java.util.concurrent.CountDownLatch(1);
+            List<java.util.concurrent.Future<AuctionDatabase>> runs = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++) runs.add(executor.submit(() -> {
+                start.await();
+                var server = new AuctionDatabase(folder.toFile(), config, java.util.logging.Logger.getAnonymousLogger());
+                server.init();
+                return server;
+            }));
+            start.countDown();
+            for (var run : runs) servers.add(run.get(60, java.util.concurrent.TimeUnit.SECONDS));
+            try (var c = connect(fresh); var s = c.createStatement(); var rs = s.executeQuery("SELECT version FROM ra_schema_version")) {
+                Assertions.assertTrue(rs.next()); Assertions.assertEquals(AuctionDatabase.SCHEMA_VERSION, rs.getInt(1));
+            }
+        } finally {
+            servers.forEach(AuctionDatabase::close);
+            try (var c = connect(""); var s = c.createStatement()) { s.executeUpdate("DROP DATABASE IF EXISTS " + fresh); }
+        }
     }
     @Test void columnCheckIgnoresOtherDatabasesOnTheSameServer() throws Exception {
         // Another RoyalAuctions schema that already has the tier column must not stop ours getting it.

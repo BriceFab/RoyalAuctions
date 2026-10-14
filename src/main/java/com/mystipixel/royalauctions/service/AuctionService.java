@@ -9,6 +9,7 @@ import com.mystipixel.royalauctions.search.EnchantmentBackfill;
 import com.mystipixel.royalauctions.search.EnchantmentIndex;
 import com.mystipixel.royalauctions.util.Players;
 import com.mystipixel.royalauctions.util.Text;
+import com.mystipixel.royalcommon.storage.Lease;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -16,6 +17,7 @@ import org.bukkit.permissions.PermissionAttachmentInfo;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -23,6 +25,8 @@ import java.util.logging.Level;
 
 /** Auction changes use durable database reservations; all inventory/Vault effects run on main. */
 public final class AuctionService {
+    public static final String EXPIRY_JOB = "expiry";
+    public static final String PRUNE_JOB = "prune";
     private final JavaPlugin plugin;
     private final AuctionDatabase db;
     private final AuctionTransactions transactions;
@@ -40,8 +44,25 @@ public final class AuctionService {
     private long lastRecoveryWarning;
     private volatile int activeCache;
     private Consumer<UUID> eventReady = id -> {};
+    private volatile Lease lease;
 
     public void eventNotifier(Consumer<UUID> notifier) { this.eventReady = notifier; }
+    /** Servers sharing a database take turns at the expiry sweep and pruning through this lease. */
+    public void lease(Lease lease) { this.lease = lease; }
+    /** Takes or renews the job's lease; true when this server should run the job now. Database thread. */
+    public boolean holdsLease(String job, Duration ttl) throws SQLException {
+        Lease current = lease;
+        return current == null || current.tryAcquireOrRenew(job, ttl);
+    }
+    /** Lets another server take over the jobs at once instead of after the lease runs out. Call from onDisable. */
+    public void releaseLeases() {
+        Lease current = lease;
+        if (current == null) return;
+        for (String job : List.of(EXPIRY_JOB, PRUNE_JOB)) {
+            try { current.release(job); }
+            catch (SQLException e) { plugin.getLogger().log(Level.WARNING, "Could not release lease " + job + "; it frees itself when it expires", e); }
+        }
+    }
     /** Retries file receipts created before the database journal. Main thread. */
     public void retryPayments() { legacyPayments.retryRejected(); }
 
@@ -373,18 +394,23 @@ public final class AuctionService {
     public void sweepExpired() {
         if (workers.closing()) return;
         try {
-            for (Listing l : db.dueExpirations(System.currentTimeMillis())) {
-                try {
-                    if (transactions.expire(l.id())) {
-                        Listing settled = db.getListing(l.id()).orElse(l);
-                        eventReady.accept(settled.status() == ListingStatus.SOLD && settled.topBidderId() != null
-                                ? settled.topBidderId() : settled.sellerId());
-                    }
-                }
-                catch (Exception e) { logError("settling auction " + l.id(), e); }
-            }
+            // held across two sweeps, so another server only takes over when this one stops sweeping
+            if (holdsLease(EXPIRY_JOB, Duration.ofMillis(config.expirySweepTicks() * 50L * 2)))
+                settleExpired();
             activeCache = db.countActive();
         } catch (Exception e) { logError("settling expired auctions", e); }
+    }
+    private void settleExpired() throws SQLException {
+        for (Listing l : db.dueExpirations(System.currentTimeMillis())) {
+            try {
+                if (transactions.expire(l.id())) {
+                    Listing settled = db.getListing(l.id()).orElse(l);
+                    eventReady.accept(settled.status() == ListingStatus.SOLD && settled.topBidderId() != null
+                            ? settled.topBidderId() : settled.sellerId());
+                }
+            }
+            catch (Exception e) { logError("settling auction " + l.id(), e); }
+        }
     }
     /** Complete safe database-only work; retry only payouts confirmed not to have moved money. */
     public void recover() {

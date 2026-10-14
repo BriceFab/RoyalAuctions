@@ -373,4 +373,64 @@ class AuctionTransactionsTest {
             assertTrue(db.drainEvents(alice).isEmpty()); assertEquals(1, db.drainEvents(bob).size());
         } finally { other.close(); }
     }
+
+    @Test void biddersOnTwoServersLeaveOneFundedLeaderAndRefundEveryoneElse() throws Exception {
+        var l = seed(ListingType.AUCTION);
+        var other = new AuctionDatabase(folder.toFile(), config(), Logger.getAnonymousLogger()); other.init();
+        var next = new AtomicInteger(100);
+        var accepted = new ConcurrentLinkedQueue<Integer>();
+        try (var executor = Executors.newFixedThreadPool(4)) {
+            var start = new CountDownLatch(1);
+            List<Future<?>> runs = new ArrayList<>();
+            for (int t = 0; t < 4; t++) {
+                var server = t % 2 == 0 ? tx : other.transactions();
+                UUID bidder = UUID.randomUUID();
+                runs.add(executor.submit(() -> {
+                    start.await();
+                    for (int i = 0; i < 10; i++) {
+                        int amount = next.addAndGet(10);
+                        try {
+                            var o = server.reserveBid(l.id(), bidder, "Bidder", amount, previous -> 10, 0, worker).operation();
+                            assertTrue(server.begin(o.id(), worker)); server.acknowledge(o.id(), true); server.finish(o.id());
+                            accepted.add(amount);
+                        } catch (AuctionTransactions.Rejected busyOrOutbid) {
+                            // another server's bid holds the listing, or already beat this one
+                        }
+                    }
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (var run : runs) run.get(60, TimeUnit.SECONDS);
+        } finally { other.close(); }
+        assertFalse(accepted.isEmpty());
+        int top = accepted.stream().mapToInt(Integer::intValue).max().orElseThrow();
+        assertEquals(top, current(l).currentBid()); assertEquals(accepted.size(), current(l).bidCount());
+        assertEquals(accepted.size(), count("ra_bids")); assertEquals(0, count("ra_operation_locks"));
+        var refunds = tx.pending(500);
+        assertEquals(accepted.size() - 1, refunds.size());
+        assertEquals(accepted.stream().mapToInt(Integer::intValue).sum() - top,
+                refunds.stream().mapToDouble(AuctionTransactions.Operation::amount).sum(), 0.0001);
+    }
+
+    @Test void onlyOneServerHoldsAJobLeaseUntilItLetsGo() throws Exception {
+        var other = new AuctionDatabase(folder.toFile(), config(), Logger.getAnonymousLogger()); other.init();
+        try {
+            var here = db.lease("server-a"); var there = other.lease("server-b");
+            assertTrue(here.tryAcquireOrRenew("expiry", java.time.Duration.ofMinutes(10)));
+            assertFalse(there.tryAcquireOrRenew("expiry", java.time.Duration.ofMinutes(10)));
+            assertTrue(there.tryAcquireOrRenew("prune", java.time.Duration.ofMinutes(10)), "each job has its own lease");
+            here.release("expiry");
+            assertTrue(there.tryAcquireOrRenew("expiry", java.time.Duration.ofMinutes(10)));
+        } finally { other.close(); }
+    }
+
+    @Test void findsOnlinePlayersWithEventsFromAnotherServer() throws Exception {
+        var other = new AuctionDatabase(folder.toFile(), config(), Logger.getAnonymousLogger()); other.init();
+        try {
+            other.addEvent(alice, "SOLD", "Item", 10, 1);
+            assertEquals(Set.of(alice), db.playersWithEvents(List.of(alice, bob)));
+            assertTrue(db.playersWithEvents(List.of(bob)).isEmpty());
+        } finally { other.close(); }
+    }
 }
