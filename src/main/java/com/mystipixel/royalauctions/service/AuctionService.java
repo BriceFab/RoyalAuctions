@@ -268,11 +268,14 @@ public final class AuctionService {
         return false;
     }
 
-    /** One page of browse results, fetched off the main thread; stale categories on it are repaired. */
-    public void loadBrowsePage(ListingQuery query, int page, int perPage, Consumer<ListingPage> callback) {
+    /**
+     * One page of browse results, fetched off the main thread; stale categories on it are repaired.
+     * {@code knownTotal}: the match count from an earlier fetch of the same filters, or -1 to count.
+     */
+    public void loadBrowsePage(ListingQuery query, int page, int perPage, int knownTotal, Consumer<ListingPage> callback) {
         async(() -> {
             try {
-                ListingPage result = db.browse(query, page, perPage);
+                ListingPage result = db.browse(query, page, perPage, knownTotal);
                 repairStaleCategories(result.rows());
                 sync(() -> callback.accept(result));
             } catch (Exception e) {

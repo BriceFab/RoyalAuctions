@@ -35,7 +35,7 @@ public final class AuctionDatabase {
         SQLITE, MYSQL
     }
 
-    static final int SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = 2;
     private static final int CHUNK = 500;
 
     private final File dataFolder;
@@ -113,6 +113,14 @@ public final class AuctionDatabase {
             if (from < 1) {
                 createSchema(c);
                 transactions.createTables(c);
+            }
+            if (from < 2) {
+                try (Statement st = c.createStatement()) {
+                    // Price sorts and category pages read in index order instead of sorting every match.
+                    createIndex(st, "idx_ra_listings_status_price", "ra_listings(status, price)");
+                    createIndex(st, "idx_ra_listings_status_category_created", "ra_listings(status, category, created_at)");
+                    createIndex(st, "idx_ra_listings_status_category_price", "ra_listings(status, category, price)");
+                }
             }
         });
         if (before < SCHEMA_VERSION) {
@@ -355,15 +363,25 @@ public final class AuctionDatabase {
      * ordering ends with the id so listings with equal keys keep a stable position between pages.
      */
     public ListingPage browse(ListingQuery query, int page, int perPage) throws SQLException {
+        return browse(query, page, perPage, -1);
+    }
+
+    /**
+     * As {@link #browse(ListingQuery, int, int)}, but a positive {@code knownTotal} (from an earlier page of
+     * the same filters) skips the count. The page itself corrects it when the results end sooner or later.
+     */
+    public ListingPage browse(ListingQuery query, int page, int perPage, int knownTotal) throws SQLException {
         List<Object> params = new ArrayList<>();
         String where = buildWhere(query, params);
 
-        int total;
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM ra_listings " + where)) {
-            bindAll(ps, params);
-            try (ResultSet rs = ps.executeQuery()) {
-                total = rs.next() ? rs.getInt(1) : 0;
+        int total = knownTotal;
+        if (total <= 0) {
+            try (Connection c = dataSource.getConnection();
+                 PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM ra_listings " + where)) {
+                bindAll(ps, params);
+                try (ResultSet rs = ps.executeQuery()) {
+                    total = rs.next() ? rs.getInt(1) : 0;
+                }
             }
         }
         if (total == 0) {
@@ -384,6 +402,12 @@ public final class AuctionDatabase {
                     rows.add(mapListing(rs));
                 }
             }
+        }
+        if (knownTotal > 0) {
+            if (rows.isEmpty() && offset > 0) {
+                return browse(query, page, perPage, -1);
+            }
+            total = rows.size() < size ? offset + rows.size() : Math.max(total, offset + rows.size());
         }
         return new ListingPage(rows, total);
     }

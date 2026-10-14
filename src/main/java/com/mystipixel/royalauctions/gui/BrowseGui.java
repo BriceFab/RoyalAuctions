@@ -17,6 +17,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,9 @@ public final class BrowseGui extends AuctionGui {
         }
     }
 
+    // The count is the slow half of a fetch, so page flips and re-sorts reuse it for a while.
+    private static final long COUNT_REUSE_MILLIS = 30_000L;
+
     private final GuiManager manager;
     private final MenuTemplate template;
     private final Player player;
@@ -66,6 +70,9 @@ public final class BrowseGui extends AuctionGui {
 
     // Bumped per fetch so a late response for an older view is discarded.
     private int latestRequest;
+    private List<Object> countedFilters;
+    private int countedTotal;
+    private long countedAt;
     private final Map<Integer, Listing> slotToListing = new HashMap<>();
     private final Map<Integer, String> slotToCategory = new HashMap<>();
     private final List<Category> tabs;
@@ -104,10 +111,19 @@ public final class BrowseGui extends AuctionGui {
     private void render() {
         int requestId = ++latestRequest;
         int perPage = Math.max(1, template.slots("content-slots").size());
-        manager.service().loadBrowsePage(query(), page, perPage, result -> {
+        ListingQuery query = query();
+        List<Object> filters = Arrays.asList(query.category(), query.tier(), query.type(), query.search());
+        boolean reuseCount = filters.equals(countedFilters)
+                && System.currentTimeMillis() - countedAt < COUNT_REUSE_MILLIS;
+        manager.service().loadBrowsePage(query, page, perPage, reuseCount ? countedTotal : -1, result -> {
             if (requestId != latestRequest || !stillOpen()) {
                 return;
             }
+            if (!reuseCount) {
+                countedFilters = filters;
+                countedAt = System.currentTimeMillis();
+            }
+            countedTotal = result.total();
             int pages = result.pageCount(perPage);
             if (page >= pages) {
                 // Filters shrank the results below the current page: step back and refetch.
