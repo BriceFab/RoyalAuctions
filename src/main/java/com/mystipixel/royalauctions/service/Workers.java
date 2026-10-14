@@ -25,8 +25,9 @@ public final class Workers {
     private final AtomicInteger inFlight = new AtomicInteger();
     private volatile boolean closing;
 
-    public Workers(JavaPlugin plugin) {
-        this(plugin, databasePool());
+    /** {@code threads}: the database connection pool size; more threads would only wait inside the pool. */
+    public Workers(JavaPlugin plugin, int threads) {
+        this(plugin, databasePool(threads));
     }
 
     /** Tests pass an inline executor so exchanges run to completion synchronously. */
@@ -35,9 +36,9 @@ public final class Workers {
         this.database = database;
     }
 
-    private static ExecutorService databasePool() {
+    private static ExecutorService databasePool(int size) {
         AtomicInteger threads = new AtomicInteger();
-        return Executors.newCachedThreadPool(r -> {
+        return Executors.newFixedThreadPool(Math.max(1, size), r -> {
             Thread t = new Thread(r, "RoyalAuctions-db-" + threads.incrementAndGet());
             t.setDaemon(true);
             return t;

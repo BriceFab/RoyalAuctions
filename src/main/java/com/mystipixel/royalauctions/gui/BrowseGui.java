@@ -68,8 +68,9 @@ public final class BrowseGui extends AuctionGui {
     private String tier;
     private TypeFilter typeFilter = TypeFilter.ALL;
 
-    // Bumped per fetch so a late response for an older view is discarded.
-    private int latestRequest;
+    // One fetch at a time: clicks while it runs only change what the next fetch asks for.
+    private boolean fetching;
+    private boolean refetch;
     private List<Object> countedFilters;
     private int countedTotal;
     private long countedAt;
@@ -107,16 +108,26 @@ public final class BrowseGui extends AuctionGui {
                 searchMatch.itemNames(), searchMatch.enchantmentTokens());
     }
 
-    // Only the newest request may draw, so a slow page 1 cannot land after page 2 and rewind the view.
+    // Only the newest state may draw, so a slow page 1 cannot land after page 2 and rewind the view.
     private void render() {
-        int requestId = ++latestRequest;
+        if (fetching) {
+            refetch = true;
+            return;
+        }
+        fetching = true;
         int perPage = Math.max(1, template.slots("content-slots").size());
         ListingQuery query = query();
         List<Object> filters = Arrays.asList(query.category(), query.tier(), query.type(), query.search());
         boolean reuseCount = filters.equals(countedFilters)
                 && System.currentTimeMillis() - countedAt < COUNT_REUSE_MILLIS;
         manager.service().loadBrowsePage(query, page, perPage, reuseCount ? countedTotal : -1, result -> {
-            if (requestId != latestRequest || !stillOpen()) {
+            fetching = false;
+            if (!stillOpen()) {
+                return;
+            }
+            if (refetch) {
+                refetch = false;
+                render();
                 return;
             }
             if (!reuseCount) {

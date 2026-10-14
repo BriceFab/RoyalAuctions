@@ -140,7 +140,8 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
                     ? "; flagged players can't bid or buy when EconGuard's enforcement.block-flagged-trades is on."
                     : "; this EconGuard predates the pre-trade veto, so nothing is blocked."));
         }
-        this.workers = new Workers(this);
+        // At least two, so a long job (enchantment backfill, language files) cannot hold up exchanges on SQLite.
+        this.workers = new Workers(this, Math.max(2, database.poolSize()));
         try {
             this.service = new AuctionService(this, database, vault, config, categories, tiers, messages, econGuard, workers);
         } catch (RuntimeException e) {

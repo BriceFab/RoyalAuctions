@@ -144,6 +144,10 @@ public final class AuctionDatabase {
         }
     }
 
+    public int poolSize() {
+        return dataSource.getMaximumPoolSize();
+    }
+
     public void close() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
