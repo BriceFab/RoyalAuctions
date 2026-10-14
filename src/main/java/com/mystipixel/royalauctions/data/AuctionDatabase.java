@@ -541,12 +541,20 @@ public final class AuctionDatabase {
         }
     }
 
-    public void updateCategory(UUID id, String category) throws SQLException {
-        String sql = "UPDATE ra_listings SET category=? WHERE id=?";
-        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, category.toLowerCase(Locale.ROOT));
-            ps.setString(2, id.toString());
-            ps.executeUpdate();
+    /** New categories by listing id, in one transaction. */
+    public void updateCategories(java.util.Map<UUID, String> categories) throws SQLException {
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try (PreparedStatement ps = c.prepareStatement("UPDATE ra_listings SET category=? WHERE id=?")) {
+                for (var entry : categories.entrySet()) {
+                    ps.setString(1, entry.getValue().toLowerCase(Locale.ROOT));
+                    ps.setString(2, entry.getKey().toString());
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+                c.commit();
+            } catch (SQLException e) { c.rollback(); throw e; }
+            finally { c.setAutoCommit(true); }
         }
     }
 

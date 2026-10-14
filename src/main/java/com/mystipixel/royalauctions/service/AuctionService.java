@@ -276,8 +276,10 @@ public final class AuctionService {
         async(() -> {
             try {
                 ListingPage result = db.browse(query, page, perPage, knownTotal);
-                repairStaleCategories(result.rows());
-                sync(() -> callback.accept(result));
+                sync(() -> {
+                    repairStaleCategories(result.rows());
+                    callback.accept(result);
+                });
             } catch (Exception e) {
                 logError("loading listings", e);
                 sync(() -> callback.accept(ListingPage.empty()));
@@ -289,7 +291,8 @@ public final class AuctionService {
     public void repairAllCategories() {
         async(() -> {
             try {
-                repairStaleCategories(db.activeListings());
+                List<Listing> list = db.activeListings();
+                sync(() -> repairStaleCategories(list));
             } catch (Exception e) {
                 logError("repairing listing categories", e);
             }
@@ -312,8 +315,10 @@ public final class AuctionService {
         async(() -> {
             try {
                 List<Listing> list = db.activeListings();
-                repairStaleCategories(list);
-                sync(() -> callback.accept(list));
+                sync(() -> {
+                    repairStaleCategories(list);
+                    callback.accept(list);
+                });
             } catch (Exception e) {
                 logError("loading listings", e);
                 sync(() -> callback.accept(List.of()));
@@ -322,25 +327,29 @@ public final class AuctionService {
     }
 
     // Categories are stamped at creation, so a renamed category strands listings; re-derive and persist.
+    // Main thread: categorising reads the item through eco.
     private void repairStaleCategories(List<Listing> listings) {
-        int repaired = 0;
+        Map<UUID, String> repaired = new LinkedHashMap<>();
         for (Listing l : listings) {
             if (categories.isKnown(l.category())) {
                 continue;
             }
             String fresh = categories.categorize(l.item());
             l.category(fresh);
+            repaired.put(l.id(), fresh);
+        }
+        if (repaired.isEmpty()) {
+            return;
+        }
+        async(() -> {
             try {
-                db.updateCategory(l.id(), fresh);
-                repaired++;
+                db.updateCategories(repaired);
+                plugin.getLogger().info("Re-categorised " + repaired.size()
+                        + " listing(s) whose category no longer exists.");
             } catch (Exception e) {
-                logError("repairing category for listing " + l.id(), e);
+                logError("repairing listing categories", e);
             }
-        }
-        if (repaired > 0) {
-            plugin.getLogger().info("Re-categorised " + repaired
-                    + " listing(s) whose category no longer exists.");
-        }
+        });
     }
 
     /** A fresh copy of one listing, or empty if it no longer exists. */
