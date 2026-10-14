@@ -240,6 +240,14 @@ class AuctionTransactionsTest {
         assertTrue(tx.unclaimedEarnings(seller).isEmpty());
     }
 
+    @Test void hubCountsBidsLeadsAndOwnListings() throws Exception {
+        var l = seed(ListingType.AUCTION); seed(ListingType.BIN);
+        complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);
+        assertEquals(new AuctionDatabase.HubCounts(1, 0, 0), db.hubCounts(alice));
+        assertEquals(new AuctionDatabase.HubCounts(1, 1, 0), db.hubCounts(bob));
+        assertEquals(new AuctionDatabase.HubCounts(0, 0, 2), db.hubCounts(seller));
+    }
+
     @Test void bidRefundsAreNotHeld() throws Exception {
         var l = seed(ListingType.AUCTION);
         complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);

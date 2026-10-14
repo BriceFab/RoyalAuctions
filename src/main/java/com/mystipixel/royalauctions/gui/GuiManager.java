@@ -59,20 +59,13 @@ public final class GuiManager {
     }
 
     public void openHub(Player player) {
-        UUID uuid = player.getUniqueId();
         int ticket = ticket(player);
-        service.loadBidListings(uuid, bids -> service.loadSellerListings(uuid, mine -> {
+        service.loadHubCounts(player.getUniqueId(), counts -> {
             if (!current(player, ticket)) return;
-            int top = 0;
-            for (Listing l : bids) {
-                if (l.topBidderId() != null && l.topBidderId().equals(uuid)) {
-                    top++;
-                }
-            }
-            HubGui gui = new HubGui(this, player, bids.size(), top, mine.size(), service.activeCache());
+            HubGui gui = new HubGui(this, player, counts.bids(), counts.winning(), counts.selling(), service.activeCache());
             player.openInventory(gui.getInventory());
             playOpen(player, "hub");
-        }));
+        });
     }
 
     public void openBids(Player player) {

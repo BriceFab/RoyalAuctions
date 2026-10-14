@@ -381,6 +381,18 @@ public final class AuctionService {
         });
     }
 
+    public void loadHubCounts(UUID player, Consumer<AuctionDatabase.HubCounts> callback) {
+        async(() -> {
+            try {
+                AuctionDatabase.HubCounts counts = db.hubCounts(player);
+                sync(() -> callback.accept(counts));
+            } catch (Exception e) {
+                logError("loading hub counts", e);
+                sync(() -> callback.accept(new AuctionDatabase.HubCounts(0, 0, 0)));
+            }
+        });
+    }
+
     public void loadCollection(UUID ownerId, Consumer<List<CollectionItem>> callback) {
         async(() -> {
             try {

@@ -125,6 +125,7 @@ public final class AuctionDatabase {
                     createIndex(st, "idx_ra_operations_state_note", dialect == Dialect.MYSQL
                             ? "ra_operations(state, note(32))" : "ra_operations(state, note)");
                     createIndex(st, "idx_ra_operations_player", "ra_operations(player_id, state)");
+                    createIndex(st, "idx_ra_bids_bidder_listing", "ra_bids(bidder_id, listing_id)");
                 }
             }
         });
@@ -515,6 +516,26 @@ public final class AuctionDatabase {
             }
         }
         return out;
+    }
+
+    /** What the hub shows: active auctions the player bid on, how many of those they lead, and their own active listings. */
+    public record HubCounts(int bids, int winning, int selling) { }
+
+    public HubCounts hubCounts(UUID player) throws SQLException {
+        String bidOn = "FROM ra_listings l WHERE l.status='ACTIVE' AND l.id IN "
+                + "(SELECT b.listing_id FROM ra_bids b WHERE b.bidder_id=?)";
+        String sql = "SELECT (SELECT COUNT(*) " + bidOn + "), (SELECT COUNT(*) " + bidOn + " AND l.top_bidder_id=?), "
+                + "(SELECT COUNT(*) FROM ra_listings WHERE status='ACTIVE' AND seller_id=?)";
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            String id = player.toString();
+            for (int i = 1; i <= 4; i++) {
+                ps.setString(i, id);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return new HubCounts(rs.getInt(1), rs.getInt(2), rs.getInt(3));
+            }
+        }
     }
 
     public void updateCategory(UUID id, String category) throws SQLException {
