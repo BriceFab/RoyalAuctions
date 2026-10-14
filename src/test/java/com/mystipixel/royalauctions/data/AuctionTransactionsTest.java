@@ -240,6 +240,14 @@ class AuctionTransactionsTest {
         assertTrue(tx.unclaimedEarnings(seller).isEmpty());
     }
 
+    @Test void hubCountsBidsLeadsAndOwnListings() throws Exception {
+        var l = seed(ListingType.AUCTION); seed(ListingType.BIN);
+        complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);
+        assertEquals(new AuctionDatabase.HubCounts(1, 0, 0), db.hubCounts(alice));
+        assertEquals(new AuctionDatabase.HubCounts(1, 1, 0), db.hubCounts(bob));
+        assertEquals(new AuctionDatabase.HubCounts(0, 0, 2), db.hubCounts(seller));
+    }
+
     @Test void bidRefundsAreNotHeld() throws Exception {
         var l = seed(ListingType.AUCTION);
         complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);
@@ -323,6 +331,15 @@ class AuctionTransactionsTest {
         var context = tx.paymentContext(l.id()); assertEquals(alice, context.buyer()); assertFalse(context.auction());
     }
 
+    @Test void combinedCompletionKeepsTheAcknowledgementWhenFinishingFails() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); failInserts();
+        assertThrows(SQLException.class, () -> tx.complete(o.id(), true));
+        assertEquals(APPLIED, tx.get(o.id()).state(), "a known payment is not left looking interrupted");
+        sql("DROP TRIGGER fail_delivery"); tx.finish(o.id());
+        assertEquals(DONE, tx.get(o.id()).state()); assertEquals(ListingStatus.SOLD, current(l).status());
+    }
+
     @Test void pruningPreservesUnfinishedSellerPaymentAndDraftCustody() throws Exception {
         var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
         var payout = tx.pending(50).getFirst();
@@ -332,6 +349,19 @@ class AuctionTransactionsTest {
         assertTrue(db.getListing(l.id()).isPresent()); assertTrue(db.getListing(draft.id()).isPresent());
         complete(payout, true); assertEquals(1, db.pruneClosed(Long.MAX_VALUE));
         assertTrue(db.getListing(draft.id()).isPresent()); assertEquals(2, count("ra_collection"));
+    }
+
+    @Test void pruningDropsFinishedOperationsButKeepsOpenAndReconciledOnes() throws Exception {
+        var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
+        var payout = tx.pending(50).getFirst();
+        var held = seed(ListingType.BIN); var o = tx.reserveBuy(held.id(), bob, "Bob", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); sql("UPDATE ra_operations SET updated_at=0 WHERE id=?", o.id());
+        tx.heartbeat(worker); sql("UPDATE ra_workers SET heartbeat=0"); tx.resolve(o.id(), true, "console");
+        db.pruneClosed(Long.MAX_VALUE);
+        assertEquals(READY, tx.get(payout.id()).state());
+        assertEquals(DONE, tx.get(o.id()).state(), "reconciled operations stay with their audit record");
+        assertEquals(3, count("ra_operations"), "only the finished purchase went");
+        assertEquals(0, count("ra_workers"));
     }
 
     @Test void twoFinalizersCannotRepeatRefundOrBidHistory() throws Exception {

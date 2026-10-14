@@ -161,6 +161,16 @@ class SearchBrowseTest {
         assertTrue(db.listingsWithoutEnchantmentIndex("", 10).isEmpty());
     }
 
+    @Test void aRememberedCountIsCorrectedByThePage() throws Exception {
+        for (int i = 0; i < 5; i++) seed("Item " + i, "");
+        var query = ListingQuery.newest();
+        assertEquals(5, db.browse(query, 0, 2).total());
+        assertEquals(9, db.browse(query, 0, 2, 9).total(), "a full page cannot tell, so the count is kept");
+        assertEquals(5, db.browse(query, 2, 2, 9).total(), "a short page shows where the results end");
+        assertEquals(5, db.browse(query, 4, 2, 9).total(), "an empty page counts again");
+        assertEquals(2, db.browse(query, 0, 2, 9).rows().size());
+    }
+
     @Test void listingsIndexedMeanwhileAreNotOverwritten() throws Exception {
         Listing l = seed("Item", null);
         db.saveEnchantmentIndexes(Map.of(l.id().toString(), "|minecraft:smite=2|"));

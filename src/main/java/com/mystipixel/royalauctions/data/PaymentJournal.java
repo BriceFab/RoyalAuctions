@@ -123,6 +123,11 @@ public final class PaymentJournal {
         return out;
     }
 
+    /** The receipt while it is still pending, or null once it is closed or was never written. */
+    public synchronized Properties readPending(UUID id) {
+        return Files.exists(pending.resolve(id + ".properties")) ? read(id) : null;
+    }
+
     public synchronized Properties read(UUID id) {
         Path file = pending.resolve(id + ".properties");
         if (!Files.exists(file)) file = receipts.resolve(id + ".properties");
