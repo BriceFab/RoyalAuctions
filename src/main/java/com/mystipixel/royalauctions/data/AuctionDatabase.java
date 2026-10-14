@@ -244,7 +244,8 @@ public final class AuctionDatabase {
         logger.info("Migrated ra_listings: added column " + column + ".");
     }
 
-    private void createIndex(Statement st, String name, String target) {
+    // A failure stops the migration: the schema version is only stamped once every index exists.
+    private void createIndex(Statement st, String name, String target) throws SQLException {
         // MySQL lacks CREATE INDEX IF NOT EXISTS on older versions, so fall back to a plain CREATE.
         try {
             st.executeUpdate("CREATE INDEX IF NOT EXISTS " + name + " ON " + target);
@@ -252,10 +253,8 @@ public final class AuctionDatabase {
             try {
                 st.executeUpdate("CREATE INDEX " + name + " ON " + target);
             } catch (SQLException e) {
-                // Already existing is fine; anything else leaves queries doing full scans, so warn.
                 if (!alreadyExists(e)) {
-                    logger.warning("Could not create index " + name + " on " + target + ", queries using it"
-                            + " will fall back to a full table scan: " + e.getMessage());
+                    throw e;
                 }
             }
         }

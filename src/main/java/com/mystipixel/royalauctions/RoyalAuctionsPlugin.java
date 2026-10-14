@@ -64,6 +64,9 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     private BukkitTask expiryTask;
     private BukkitTask recoveryTask;
     private BukkitTask pruneTask;
+    // longer than the daily period, so the server that pruned last keeps the job; another takes it over a day
+    // after that server stops
+    private static final Duration PRUNE_LEASE = Duration.ofHours(25);
     private BukkitTask eventPollTask;
     private String serverId;
     private AuctionPlaceholderExpansion placeholderExpansion;
@@ -96,11 +99,13 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         this.database = new AuctionDatabase(getDataFolder(), config.storageSection(), getLogger());
         try {
             serverId = ServerId.resolve(config.storageSection().getString("server-id", ""), getDataFolder().toPath());
-            database.init();
         } catch (IOException | IllegalArgumentException e) {
             getLogger().log(Level.SEVERE, "Could not work out this server's id (storage.server-id), disabling RoyalAuctions.", e);
             getServer().getPluginManager().disablePlugin(this);
             return;
+        }
+        try {
+            database.init();
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "Failed to initialise storage, disabling RoyalAuctions.", e);
             getServer().getPluginManager().disablePlugin(this);
@@ -291,7 +296,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             long cutoff = System.currentTimeMillis()
                     - config.closedRetentionDays() * 24L * 60L * 60L * 1000L;
             try {
-                if (!service.holdsLease(AuctionService.PRUNE_JOB, Duration.ofHours(1))) {
+                if (!service.holdsLease(AuctionService.PRUNE_JOB, PRUNE_LEASE)) {
                     return;
                 }
                 int removed = database.pruneClosed(cutoff);

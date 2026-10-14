@@ -384,7 +384,9 @@ island servers all see the same listings, bids and collections.
   bidder gets the notice on whichever server they're on, within `refresh-seconds`. The "new bid on
   your item" line still only reaches a seller on the server where the bid was placed.
 - **One server runs the expiry sweep and the daily prune.** They run on whichever server holds the
-  lease (`ra_lease`); if it stops, another takes over within two sweep intervals.
+  lease (`ra_lease`). If the sweep's server stops, another takes over within two sweep intervals;
+  set `expiry-sweep-minutes` the same on every server, because the holder's interval is the one that
+  counts. The prune moves to another server a day after its server stops.
 - **Servers that start together take turns migrating the schema** (`ra_schema_version`). From this
   version on, an older RoyalAuctions refuses to start against a database a newer one has migrated.
 - **The economy must be shared too.** Payments and refunds move Vault money on the server that
@@ -392,6 +394,10 @@ island servers all see the same listings, bids and collections.
   money ends up on the wrong server; use a network-wide economy such as RoyalBank.
 - **Keep the `categories/` files the same on every server.** A server that doesn't know a listing's
   category files it again by its own rules, and two servers with different rules keep refiling.
+- **Run this version or newer on every server.** An older build sharing the database still trades
+  safely, but it sweeps without the lease and never shows notices from other servers.
+- **A notice can rarely show twice** if a player switches servers at the moment it is delivered. It
+  is never lost.
 - **Keep the servers' clocks in sync** (NTP). Listing end times are written with the clock of the
   server that created or extended them.
 
