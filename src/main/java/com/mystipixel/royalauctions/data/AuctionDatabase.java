@@ -626,6 +626,15 @@ public final class AuctionDatabase {
         }
     }
 
+    /** The newest queued event's id, 0 when there are none; it only moves when an event is added or removed. */
+    public long latestEventId() throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT MAX(id) FROM ra_events");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getLong(1) : 0;
+        }
+    }
+
     /** Which of these players have queued events, e.g. ones an exchange on another server left for them. */
     public Set<UUID> playersWithEvents(Collection<UUID> players) throws SQLException {
         Set<UUID> out = new HashSet<>();

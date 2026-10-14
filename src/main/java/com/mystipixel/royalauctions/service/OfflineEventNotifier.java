@@ -46,6 +46,8 @@ public final class OfflineEventNotifier implements Listener {
     private final Set<UUID> again = ConcurrentHashMap.newKeySet();
     private final Set<UUID> remind = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean polling = new AtomicBoolean();
+    // Newest event id the last full poll saw; the per-player lookup runs only once it moves.
+    private volatile long polledEventId = -1;
 
     private record Waiting(int items, double earnings) {
         static final Waiting NOTHING = new Waiting(0, 0);
@@ -91,7 +93,10 @@ public final class OfflineEventNotifier implements Listener {
         List<UUID> players = List.copyOf(online);
         workers.async(() -> {
             try {
+                long latest = db.latestEventId();
+                if (latest == polledEventId) return;
                 db.playersWithEvents(players).forEach(this::notifyOnline);
+                polledEventId = latest;
             } catch (Exception e) {
                 plugin.getLogger().log(Level.WARNING, "Could not check for auction events from other servers", e);
             } finally {

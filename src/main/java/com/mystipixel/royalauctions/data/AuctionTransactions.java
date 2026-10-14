@@ -396,13 +396,11 @@ public final class AuctionTransactions {
         }
     }
     public void heartbeat(String worker) throws SQLException {
-        transaction(c -> {
-            // An UPDATE can report zero changed rows if the millisecond value is identical.
-            try { update(c, "INSERT INTO ra_workers(id,heartbeat) VALUES (?,?)", worker, System.currentTimeMillis()); }
-            catch (SQLException e) { if (!duplicate(e)) throw e; }
-            update(c, "UPDATE ra_workers SET heartbeat=? WHERE id=?", System.currentTimeMillis(), worker);
-            return null;
-        });
+        long now = System.currentTimeMillis();
+        String upsert = runner.dialect() == Dialect.MYSQL
+                ? "INSERT INTO ra_workers(id,heartbeat) VALUES (?,?) ON DUPLICATE KEY UPDATE heartbeat=?"
+                : "INSERT INTO ra_workers(id,heartbeat) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET heartbeat=?";
+        try (Connection c = source.getConnection()) { update(c, upsert, worker, now, now); }
     }
     /** Operator must stop the originating process and verify the external account/inventory first. */
     public void resolve(UUID id, boolean applied, String operator) throws SQLException {
