@@ -240,6 +240,14 @@ class AuctionTransactionsTest {
         assertTrue(tx.unclaimedEarnings(seller).isEmpty());
     }
 
+    @Test void hubCountsBidsLeadsAndOwnListings() throws Exception {
+        var l = seed(ListingType.AUCTION); seed(ListingType.BIN);
+        complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);
+        assertEquals(new AuctionDatabase.HubCounts(1, 0, 0), db.hubCounts(alice));
+        assertEquals(new AuctionDatabase.HubCounts(1, 1, 0), db.hubCounts(bob));
+        assertEquals(new AuctionDatabase.HubCounts(0, 0, 2), db.hubCounts(seller));
+    }
+
     @Test void bidRefundsAreNotHeld() throws Exception {
         var l = seed(ListingType.AUCTION);
         complete(bid(l, alice, 100), true); complete(bid(l, bob, 120), true);
@@ -323,6 +331,15 @@ class AuctionTransactionsTest {
         var context = tx.paymentContext(l.id()); assertEquals(alice, context.buyer()); assertFalse(context.auction());
     }
 
+    @Test void combinedCompletionKeepsTheAcknowledgementWhenFinishingFails() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); failInserts();
+        assertThrows(SQLException.class, () -> tx.complete(o.id(), true));
+        assertEquals(APPLIED, tx.get(o.id()).state(), "a known payment is not left looking interrupted");
+        sql("DROP TRIGGER fail_delivery"); tx.finish(o.id());
+        assertEquals(DONE, tx.get(o.id()).state()); assertEquals(ListingStatus.SOLD, current(l).status());
+    }
+
     @Test void pruningPreservesUnfinishedSellerPaymentAndDraftCustody() throws Exception {
         var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
         var payout = tx.pending(50).getFirst();
@@ -332,6 +349,19 @@ class AuctionTransactionsTest {
         assertTrue(db.getListing(l.id()).isPresent()); assertTrue(db.getListing(draft.id()).isPresent());
         complete(payout, true); assertEquals(1, db.pruneClosed(Long.MAX_VALUE));
         assertTrue(db.getListing(draft.id()).isPresent()); assertEquals(2, count("ra_collection"));
+    }
+
+    @Test void pruningDropsFinishedOperationsButKeepsOpenAndReconciledOnes() throws Exception {
+        var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
+        var payout = tx.pending(50).getFirst();
+        var held = seed(ListingType.BIN); var o = tx.reserveBuy(held.id(), bob, "Bob", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); sql("UPDATE ra_operations SET updated_at=0 WHERE id=?", o.id());
+        tx.heartbeat(worker); sql("UPDATE ra_workers SET heartbeat=0"); tx.resolve(o.id(), true, "console");
+        db.pruneClosed(Long.MAX_VALUE);
+        assertEquals(READY, tx.get(payout.id()).state());
+        assertEquals(DONE, tx.get(o.id()).state(), "reconciled operations stay with their audit record");
+        assertEquals(3, count("ra_operations"), "only the finished purchase went");
+        assertEquals(0, count("ra_workers"));
     }
 
     @Test void twoFinalizersCannotRepeatRefundOrBidHistory() throws Exception {
@@ -371,6 +401,66 @@ class AuctionTransactionsTest {
             start.countDown(); var delivered = new ArrayList<>(a.get(10, TimeUnit.SECONDS)); delivered.addAll(b.get(10, TimeUnit.SECONDS));
             assertEquals(20, delivered.size()); assertEquals(20, delivered.stream().map(OfflineEvent::item).distinct().count());
             assertTrue(db.drainEvents(alice).isEmpty()); assertEquals(1, db.drainEvents(bob).size());
+        } finally { other.close(); }
+    }
+
+    @Test void biddersOnTwoServersLeaveOneFundedLeaderAndRefundEveryoneElse() throws Exception {
+        var l = seed(ListingType.AUCTION);
+        var other = new AuctionDatabase(folder.toFile(), config(), Logger.getAnonymousLogger()); other.init();
+        var next = new AtomicInteger(100);
+        var accepted = new ConcurrentLinkedQueue<Integer>();
+        try (var executor = Executors.newFixedThreadPool(4)) {
+            var start = new CountDownLatch(1);
+            List<Future<?>> runs = new ArrayList<>();
+            for (int t = 0; t < 4; t++) {
+                var server = t % 2 == 0 ? tx : other.transactions();
+                UUID bidder = UUID.randomUUID();
+                runs.add(executor.submit(() -> {
+                    start.await();
+                    for (int i = 0; i < 10; i++) {
+                        int amount = next.addAndGet(10);
+                        try {
+                            var o = server.reserveBid(l.id(), bidder, "Bidder", amount, previous -> 10, 0, worker).operation();
+                            assertTrue(server.begin(o.id(), worker)); server.acknowledge(o.id(), true); server.finish(o.id());
+                            accepted.add(amount);
+                        } catch (AuctionTransactions.Rejected busyOrOutbid) {
+                            // another server's bid holds the listing, or already beat this one
+                        }
+                    }
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (var run : runs) run.get(60, TimeUnit.SECONDS);
+        } finally { other.close(); }
+        assertFalse(accepted.isEmpty());
+        int top = accepted.stream().mapToInt(Integer::intValue).max().orElseThrow();
+        assertEquals(top, current(l).currentBid()); assertEquals(accepted.size(), current(l).bidCount());
+        assertEquals(accepted.size(), count("ra_bids")); assertEquals(0, count("ra_operation_locks"));
+        var refunds = tx.pending(500);
+        assertEquals(accepted.size() - 1, refunds.size());
+        assertEquals(accepted.stream().mapToInt(Integer::intValue).sum() - top,
+                refunds.stream().mapToDouble(AuctionTransactions.Operation::amount).sum(), 0.0001);
+    }
+
+    @Test void onlyOneServerHoldsAJobLeaseUntilItLetsGo() throws Exception {
+        var other = new AuctionDatabase(folder.toFile(), config(), Logger.getAnonymousLogger()); other.init();
+        try {
+            var here = db.lease("server-a"); var there = other.lease("server-b");
+            assertTrue(here.tryAcquireOrRenew("expiry", java.time.Duration.ofMinutes(10)));
+            assertFalse(there.tryAcquireOrRenew("expiry", java.time.Duration.ofMinutes(10)));
+            assertTrue(there.tryAcquireOrRenew("prune", java.time.Duration.ofMinutes(10)), "each job has its own lease");
+            here.release("expiry");
+            assertTrue(there.tryAcquireOrRenew("expiry", java.time.Duration.ofMinutes(10)));
+        } finally { other.close(); }
+    }
+
+    @Test void findsOnlinePlayersWithEventsFromAnotherServer() throws Exception {
+        var other = new AuctionDatabase(folder.toFile(), config(), Logger.getAnonymousLogger()); other.init();
+        try {
+            other.addEvent(alice, "SOLD", "Item", 10, 1);
+            assertEquals(Set.of(alice), db.playersWithEvents(List.of(alice, bob)));
+            assertTrue(db.playersWithEvents(List.of(bob)).isEmpty());
         } finally { other.close(); }
     }
 }

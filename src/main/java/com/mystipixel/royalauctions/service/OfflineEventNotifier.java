@@ -15,11 +15,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
 /**
@@ -43,6 +45,9 @@ public final class OfflineEventNotifier implements Listener {
     private final Set<UUID> delivering = ConcurrentHashMap.newKeySet();
     private final Set<UUID> again = ConcurrentHashMap.newKeySet();
     private final Set<UUID> remind = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean polling = new AtomicBoolean();
+    // Newest event id the last full poll saw; the per-player lookup runs only once it moves.
+    private volatile long polledEventId = -1;
 
     private record Waiting(int items, double earnings) {
         static final Waiting NOTHING = new Waiting(0, 0);
@@ -79,6 +84,27 @@ public final class OfflineEventNotifier implements Listener {
         });
     }
 
+    /**
+     * Delivers events another server queued for players online here (a sale or outbid that happened
+     * there). Call on the main thread; a poll still running makes the next one skip.
+     */
+    public void pollOnline(Collection<UUID> online) {
+        if (online.isEmpty() || workers.closing() || !polling.compareAndSet(false, true)) return;
+        List<UUID> players = List.copyOf(online);
+        workers.async(() -> {
+            try {
+                long latest = db.latestEventId();
+                if (latest == polledEventId) return;
+                db.playersWithEvents(players).forEach(this::notifyOnline);
+                polledEventId = latest;
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.WARNING, "Could not check for auction events from other servers", e);
+            } finally {
+                polling.set(false);
+            }
+        });
+    }
+
     private void start(UUID id) {
         if (workers.closing()) return;
         if (!delivering.add(id)) {
@@ -97,6 +123,7 @@ public final class OfflineEventNotifier implements Listener {
             waiting = joined ? waiting(id) : Waiting.NOTHING;
         } catch (Exception e) {
             plugin.getLogger().log(Level.WARNING, "Could not read the join notice (offline events, collection) for " + id, e);
+            polledEventId = -1;                  // let the next poll try again
             finish(id);
             return;
         }
@@ -125,6 +152,7 @@ public final class OfflineEventNotifier implements Listener {
                     db.deleteEvents(shown);
                 } catch (Exception e) {
                     plugin.getLogger().log(Level.WARNING, "Could not clear delivered offline auction events", e);
+                    polledEventId = -1;
                 } finally {
                     finish(id);
                 }

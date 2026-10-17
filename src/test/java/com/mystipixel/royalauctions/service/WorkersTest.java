@@ -21,7 +21,7 @@ class WorkersTest {
     }
 
     @Test void shutdownRunsDatabaseWorkAndTheMainThreadStepsItQueues() {
-        Workers workers = new Workers(disabledPlugin());
+        Workers workers = new Workers(disabledPlugin(), 2);
         List<String> steps = new CopyOnWriteArrayList<>();
         workers.async(() -> {
             try { Thread.sleep(50); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
@@ -37,7 +37,7 @@ class WorkersTest {
     }
 
     @Test void workSubmittedAfterShutdownIsDroppedNotRun() {
-        Workers workers = new Workers(disabledPlugin());
+        Workers workers = new Workers(disabledPlugin(), 2);
         workers.shutdown(1_000);
         List<String> steps = new CopyOnWriteArrayList<>();
         workers.async(() -> steps.add("late"));

@@ -1,5 +1,9 @@
 package com.mystipixel.royalauctions.data;
 
+import com.mystipixel.royalcommon.storage.Dialect;
+import com.mystipixel.royalcommon.storage.Lease;
+import com.mystipixel.royalcommon.storage.SchemaVersion;
+import com.mystipixel.royalcommon.storage.TxRunner;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.configuration.ConfigurationSection;
@@ -11,9 +15,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,15 +36,23 @@ public final class AuctionDatabase {
         SQLITE, MYSQL
     }
 
+    static final int SCHEMA_VERSION = 2;
+    private static final int CHUNK = 500;
+    // A server that has not heartbeat for this long is gone; its row only mattered for /ah recovery.
+    private static final long WORKER_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1000;
+
     private final File dataFolder;
     private final ConfigurationSection config;
     private final Logger logger;
 
     private Type type;
     private HikariDataSource dataSource;
+    private TxRunner runner;
     private AuctionTransactions transactions;
 
     public AuctionTransactions transactions() { return transactions; }
+
+    public Type type() { return type; }
 
     public AuctionDatabase(File dataFolder, ConfigurationSection storageConfig, Logger logger) {
         this.dataFolder = dataFolder;
@@ -77,15 +93,54 @@ public final class AuctionDatabase {
         }
 
         this.dataSource = new HikariDataSource(hikari);
-        if (type == Type.SQLITE) {
-            try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
-                s.execute("PRAGMA journal_mode=WAL");
+        try {
+            if (type == Type.SQLITE) {
+                try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
+                    s.execute("PRAGMA journal_mode=WAL");
+                }
             }
+            runner = new TxRunner(dataSource);
+            transactions = new AuctionTransactions(runner);
+            migrate();
+            transactions.init();
+        } catch (SQLException | RuntimeException e) {
+            dataSource.close();
+            throw e;
         }
-        createSchema();
-        transactions = new AuctionTransactions(dataSource);
-        transactions.init();
         logger.info("Connected to " + type + " storage.");
+    }
+
+    // Servers sharing a MySQL database that start together take turns here; the second finds nothing to do.
+    private void migrate() throws SQLException {
+        int before = new SchemaVersion(runner, "ra").ensure(SCHEMA_VERSION, (c, dialect, from, to) -> {
+            if (from < 1) {
+                createSchema(c);
+                transactions.createTables(c);
+            }
+            if (from < 2) {
+                try (Statement st = c.createStatement()) {
+                    // Price sorts and category pages read in index order instead of sorting every match.
+                    createIndex(st, "idx_ra_listings_status_price", "ra_listings(status, price)");
+                    createIndex(st, "idx_ra_listings_status_category_created", "ra_listings(status, category, created_at)");
+                    createIndex(st, "idx_ra_listings_status_category_price", "ra_listings(status, category, price)");
+                    // The recovery poll steps over held sale payouts by note; a prefix keeps MySQL's key short.
+                    createIndex(st, "idx_ra_operations_state_note", dialect == Dialect.MYSQL
+                            ? "ra_operations(state, note(32))" : "ra_operations(state, note)");
+                    createIndex(st, "idx_ra_operations_player", "ra_operations(player_id, state)");
+                    createIndex(st, "idx_ra_bids_bidder_listing", "ra_bids(bidder_id, listing_id)");
+                    createIndex(st, "idx_ra_events_created", "ra_events(created_at)");
+                }
+            }
+        });
+        if (before < SCHEMA_VERSION) {
+            logger.info("Database schema migrated from version " + before + " to " + SCHEMA_VERSION + ".");
+        }
+        lease("").createTable();
+    }
+
+    /** A lease on this database, for the jobs only one server should run (expiry and pruning). */
+    public Lease lease(String serverId) {
+        return new Lease(runner, "ra", serverId);
     }
 
     private void registerDriver(String driverClass) {
@@ -98,6 +153,10 @@ public final class AuctionDatabase {
         }
     }
 
+    public int poolSize() {
+        return dataSource.getMaximumPoolSize();
+    }
+
     public void close() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
@@ -108,8 +167,8 @@ public final class AuctionDatabase {
         return type == Type.MYSQL ? "LONGTEXT" : "TEXT";
     }
 
-    private void createSchema() throws SQLException {
-        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
+    private void createSchema(Connection c) throws SQLException {
+        try (Statement st = c.createStatement()) {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS ra_listings ("
                     + "id CHAR(36) PRIMARY KEY,"
                     + "seller_id CHAR(36) NOT NULL,"
@@ -206,7 +265,8 @@ public final class AuctionDatabase {
         logger.info("Migrated ra_listings: added column " + column + ".");
     }
 
-    private void createIndex(Statement st, String name, String target) {
+    // A failure stops the migration: the schema version is only stamped once every index exists.
+    private void createIndex(Statement st, String name, String target) throws SQLException {
         // MySQL lacks CREATE INDEX IF NOT EXISTS on older versions, so fall back to a plain CREATE.
         try {
             st.executeUpdate("CREATE INDEX IF NOT EXISTS " + name + " ON " + target);
@@ -214,10 +274,8 @@ public final class AuctionDatabase {
             try {
                 st.executeUpdate("CREATE INDEX " + name + " ON " + target);
             } catch (SQLException e) {
-                // Already existing is fine; anything else leaves queries doing full scans, so warn.
                 if (!alreadyExists(e)) {
-                    logger.warning("Could not create index " + name + " on " + target + ", queries using it"
-                            + " will fall back to a full table scan: " + e.getMessage());
+                    throw e;
                 }
             }
         }
@@ -318,15 +376,25 @@ public final class AuctionDatabase {
      * ordering ends with the id so listings with equal keys keep a stable position between pages.
      */
     public ListingPage browse(ListingQuery query, int page, int perPage) throws SQLException {
+        return browse(query, page, perPage, -1);
+    }
+
+    /**
+     * As {@link #browse(ListingQuery, int, int)}, but a positive {@code knownTotal} (from an earlier page of
+     * the same filters) skips the count. The page itself corrects it when the results end sooner or later.
+     */
+    public ListingPage browse(ListingQuery query, int page, int perPage, int knownTotal) throws SQLException {
         List<Object> params = new ArrayList<>();
         String where = buildWhere(query, params);
 
-        int total;
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM ra_listings " + where)) {
-            bindAll(ps, params);
-            try (ResultSet rs = ps.executeQuery()) {
-                total = rs.next() ? rs.getInt(1) : 0;
+        int total = knownTotal;
+        if (total <= 0) {
+            try (Connection c = dataSource.getConnection();
+                 PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM ra_listings " + where)) {
+                bindAll(ps, params);
+                try (ResultSet rs = ps.executeQuery()) {
+                    total = rs.next() ? rs.getInt(1) : 0;
+                }
             }
         }
         if (total == 0) {
@@ -347,6 +415,12 @@ public final class AuctionDatabase {
                     rows.add(mapListing(rs));
                 }
             }
+        }
+        if (knownTotal > 0) {
+            if (rows.isEmpty() && offset > 0) {
+                return browse(query, page, perPage, -1);
+            }
+            total = rows.size() < size ? offset + rows.size() : Math.max(total, offset + rows.size());
         }
         return new ListingPage(rows, total);
     }
@@ -447,12 +521,40 @@ public final class AuctionDatabase {
         return out;
     }
 
-    public void updateCategory(UUID id, String category) throws SQLException {
-        String sql = "UPDATE ra_listings SET category=? WHERE id=?";
+    /** What the hub shows: active auctions the player bid on, how many of those they lead, and their own active listings. */
+    public record HubCounts(int bids, int winning, int selling) { }
+
+    public HubCounts hubCounts(UUID player) throws SQLException {
+        String bidOn = "FROM ra_listings l WHERE l.status='ACTIVE' AND l.id IN "
+                + "(SELECT b.listing_id FROM ra_bids b WHERE b.bidder_id=?)";
+        String sql = "SELECT (SELECT COUNT(*) " + bidOn + "), (SELECT COUNT(*) " + bidOn + " AND l.top_bidder_id=?), "
+                + "(SELECT COUNT(*) FROM ra_listings WHERE status='ACTIVE' AND seller_id=?)";
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, category.toLowerCase(Locale.ROOT));
-            ps.setString(2, id.toString());
-            ps.executeUpdate();
+            String id = player.toString();
+            for (int i = 1; i <= 4; i++) {
+                ps.setString(i, id);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return new HubCounts(rs.getInt(1), rs.getInt(2), rs.getInt(3));
+            }
+        }
+    }
+
+    /** New categories by listing id, in one transaction. */
+    public void updateCategories(java.util.Map<UUID, String> categories) throws SQLException {
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try (PreparedStatement ps = c.prepareStatement("UPDATE ra_listings SET category=? WHERE id=?")) {
+                for (var entry : categories.entrySet()) {
+                    ps.setString(1, entry.getValue().toLowerCase(Locale.ROOT));
+                    ps.setString(2, entry.getKey().toString());
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+                c.commit();
+            } catch (SQLException e) { c.rollback(); throw e; }
+            finally { c.setAutoCommit(true); }
         }
     }
 
@@ -499,7 +601,8 @@ public final class AuctionDatabase {
     }
 
     /**
-     * Prunes closed listings older than {@code cutoff}, orphaned bids and stale offline events.
+     * Prunes closed listings older than {@code cutoff}, orphaned bids, stale offline events, finished
+     * operations and servers that stopped heartbeating a week ago.
      * Returns how many listings went. EXPIRED/CANCELLED rows have no closure stamp, so
      * {@code expires_at} stands in for it (at most one listing duration off).
      */
@@ -519,7 +622,47 @@ public final class AuctionDatabase {
             ps.setLong(1, cutoff);
             ps.executeUpdate();
         }
+        pruneFinishedOperations(cutoff);
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM ra_workers WHERE heartbeat < ?")) {
+            ps.setLong(1, System.currentTimeMillis() - WORKER_RETENTION_MILLIS);
+            ps.executeUpdate();
+        }
         return removed;
+    }
+
+    // A batch per connection, so exchanges get the (single, on SQLite) connection between batches.
+    // Operations an operator reconciled stay with their audit record.
+    private void pruneFinishedOperations(long cutoff) throws SQLException {
+        String select = "SELECT id FROM ra_operations WHERE state='DONE' AND updated_at < ? AND NOT EXISTS "
+                + "(SELECT 1 FROM ra_reconciliations r WHERE r.operation_id = ra_operations.id) LIMIT " + CHUNK;
+        while (true) {
+            List<String> ids = new ArrayList<>();
+            try (Connection c = dataSource.getConnection()) {
+                try (PreparedStatement ps = c.prepareStatement(select)) {
+                    ps.setLong(1, cutoff);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) ids.add(rs.getString(1));
+                    }
+                }
+                if (ids.isEmpty()) {
+                    return;
+                }
+                c.setAutoCommit(false);
+                try (PreparedStatement ps = c.prepareStatement("DELETE FROM ra_operations WHERE id=? AND state='DONE'")) {
+                    for (String id : ids) {
+                        ps.setString(1, id);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                    c.commit();
+                } catch (SQLException e) { c.rollback(); throw e; }
+                finally { c.setAutoCommit(true); }
+            }
+            if (ids.size() < CHUNK) {
+                return;
+            }
+        }
     }
 
     public void addEvent(UUID player, String type, String item, double amount, long createdAt)
@@ -533,6 +676,39 @@ public final class AuctionDatabase {
             ps.setLong(5, createdAt);
             ps.executeUpdate();
         }
+    }
+
+    /** The newest queued event's id, 0 when there are none; it only moves when an event is added or removed. */
+    public long latestEventId() throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT MAX(id) FROM ra_events");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getLong(1) : 0;
+        }
+    }
+
+    /** Which of these players have queued events, e.g. ones an exchange on another server left for them. */
+    public Set<UUID> playersWithEvents(Collection<UUID> players) throws SQLException {
+        Set<UUID> out = new HashSet<>();
+        List<UUID> all = new ArrayList<>(players);
+        try (Connection c = dataSource.getConnection()) {
+            for (int from = 0; from < all.size(); from += CHUNK) {
+                List<UUID> chunk = all.subList(from, Math.min(all.size(), from + CHUNK));
+                String sql = "SELECT DISTINCT player_id FROM ra_events WHERE player_id IN ("
+                        + String.join(",", Collections.nCopies(chunk.size(), "?")) + ")";
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    for (int i = 0; i < chunk.size(); i++) {
+                        ps.setString(i + 1, chunk.get(i).toString());
+                    }
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            out.add(UUID.fromString(rs.getString(1)));
+                        }
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /**

@@ -9,6 +9,7 @@ import com.mystipixel.royalauctions.search.EnchantmentBackfill;
 import com.mystipixel.royalauctions.search.EnchantmentIndex;
 import com.mystipixel.royalauctions.util.Players;
 import com.mystipixel.royalauctions.util.Text;
+import com.mystipixel.royalcommon.storage.Lease;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -16,6 +17,7 @@ import org.bukkit.permissions.PermissionAttachmentInfo;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -23,6 +25,8 @@ import java.util.logging.Level;
 
 /** Auction changes use durable database reservations; all inventory/Vault effects run on main. */
 public final class AuctionService {
+    public static final String EXPIRY_JOB = "expiry";
+    public static final String PRUNE_JOB = "prune";
     private final JavaPlugin plugin;
     private final AuctionDatabase db;
     private final AuctionTransactions transactions;
@@ -40,8 +44,25 @@ public final class AuctionService {
     private long lastRecoveryWarning;
     private volatile int activeCache;
     private Consumer<UUID> eventReady = id -> {};
+    private volatile Lease lease;
 
     public void eventNotifier(Consumer<UUID> notifier) { this.eventReady = notifier; }
+    /** Servers sharing a database take turns at the expiry sweep and pruning through this lease. */
+    public void lease(Lease lease) { this.lease = lease; }
+    /** Takes or renews the job's lease; true when this server should run the job now. Database thread. */
+    public boolean holdsLease(String job, Duration ttl) throws SQLException {
+        Lease current = lease;
+        return current == null || current.tryAcquireOrRenew(job, ttl);
+    }
+    /** Lets another server take over the jobs at once instead of after the lease runs out. Call from onDisable. */
+    public void releaseLeases() {
+        Lease current = lease;
+        if (current == null) return;
+        for (String job : List.of(EXPIRY_JOB, PRUNE_JOB)) {
+            try { current.release(job); }
+            catch (SQLException e) { plugin.getLogger().log(Level.WARNING, "Could not release lease " + job + "; it frees itself when it expires", e); }
+        }
+    }
     /** Retries file receipts created before the database journal. Main thread. */
     public void retryPayments() { legacyPayments.retryRejected(); }
 
@@ -247,13 +268,18 @@ public final class AuctionService {
         return false;
     }
 
-    /** One page of browse results, fetched off the main thread; stale categories on it are repaired. */
-    public void loadBrowsePage(ListingQuery query, int page, int perPage, Consumer<ListingPage> callback) {
+    /**
+     * One page of browse results, fetched off the main thread; stale categories on it are repaired.
+     * {@code knownTotal}: the match count from an earlier fetch of the same filters, or -1 to count.
+     */
+    public void loadBrowsePage(ListingQuery query, int page, int perPage, int knownTotal, Consumer<ListingPage> callback) {
         async(() -> {
             try {
-                ListingPage result = db.browse(query, page, perPage);
-                repairStaleCategories(result.rows());
-                sync(() -> callback.accept(result));
+                ListingPage result = db.browse(query, page, perPage, knownTotal);
+                sync(() -> {
+                    repairStaleCategories(result.rows());
+                    callback.accept(result);
+                });
             } catch (Exception e) {
                 logError("loading listings", e);
                 sync(() -> callback.accept(ListingPage.empty()));
@@ -265,7 +291,8 @@ public final class AuctionService {
     public void repairAllCategories() {
         async(() -> {
             try {
-                repairStaleCategories(db.activeListings());
+                List<Listing> list = db.activeListings();
+                sync(() -> repairStaleCategories(list));
             } catch (Exception e) {
                 logError("repairing listing categories", e);
             }
@@ -288,8 +315,10 @@ public final class AuctionService {
         async(() -> {
             try {
                 List<Listing> list = db.activeListings();
-                repairStaleCategories(list);
-                sync(() -> callback.accept(list));
+                sync(() -> {
+                    repairStaleCategories(list);
+                    callback.accept(list);
+                });
             } catch (Exception e) {
                 logError("loading listings", e);
                 sync(() -> callback.accept(List.of()));
@@ -298,25 +327,33 @@ public final class AuctionService {
     }
 
     // Categories are stamped at creation, so a renamed category strands listings; re-derive and persist.
+    // Main thread: categorising reads the item through eco.
     private void repairStaleCategories(List<Listing> listings) {
-        int repaired = 0;
+        Map<UUID, String> repaired = new LinkedHashMap<>();
         for (Listing l : listings) {
             if (categories.isKnown(l.category())) {
                 continue;
             }
-            String fresh = categories.categorize(l.item());
-            l.category(fresh);
             try {
-                db.updateCategory(l.id(), fresh);
-                repaired++;
+                String fresh = categories.categorize(l.item());
+                l.category(fresh);
+                repaired.put(l.id(), fresh);
             } catch (Exception e) {
-                logError("repairing category for listing " + l.id(), e);
+                logError("categorising listing " + l.id(), e);
             }
         }
-        if (repaired > 0) {
-            plugin.getLogger().info("Re-categorised " + repaired
-                    + " listing(s) whose category no longer exists.");
+        if (repaired.isEmpty()) {
+            return;
         }
+        async(() -> {
+            try {
+                db.updateCategories(repaired);
+                plugin.getLogger().info("Re-categorised " + repaired.size()
+                        + " listing(s) whose category no longer exists.");
+            } catch (Exception e) {
+                logError("repairing listing categories", e);
+            }
+        });
     }
 
     /** A fresh copy of one listing, or empty if it no longer exists. */
@@ -357,6 +394,18 @@ public final class AuctionService {
         });
     }
 
+    public void loadHubCounts(UUID player, Consumer<AuctionDatabase.HubCounts> callback) {
+        async(() -> {
+            try {
+                AuctionDatabase.HubCounts counts = db.hubCounts(player);
+                sync(() -> callback.accept(counts));
+            } catch (Exception e) {
+                logError("loading hub counts", e);
+                sync(() -> callback.accept(new AuctionDatabase.HubCounts(0, 0, 0)));
+            }
+        });
+    }
+
     public void loadCollection(UUID ownerId, Consumer<List<CollectionItem>> callback) {
         async(() -> {
             try {
@@ -373,18 +422,23 @@ public final class AuctionService {
     public void sweepExpired() {
         if (workers.closing()) return;
         try {
-            for (Listing l : db.dueExpirations(System.currentTimeMillis())) {
-                try {
-                    if (transactions.expire(l.id())) {
-                        Listing settled = db.getListing(l.id()).orElse(l);
-                        eventReady.accept(settled.status() == ListingStatus.SOLD && settled.topBidderId() != null
-                                ? settled.topBidderId() : settled.sellerId());
-                    }
-                }
-                catch (Exception e) { logError("settling auction " + l.id(), e); }
-            }
+            // held across two sweeps, so another server only takes over when this one stops sweeping
+            if (holdsLease(EXPIRY_JOB, Duration.ofMillis(config.expirySweepTicks() * 50L * 2)))
+                settleExpired();
             activeCache = db.countActive();
         } catch (Exception e) { logError("settling expired auctions", e); }
+    }
+    private void settleExpired() throws SQLException {
+        for (Listing l : db.dueExpirations(System.currentTimeMillis())) {
+            try {
+                if (transactions.expire(l.id())) {
+                    Listing settled = db.getListing(l.id()).orElse(l);
+                    eventReady.accept(settled.status() == ListingStatus.SOLD && settled.topBidderId() != null
+                            ? settled.topBidderId() : settled.sellerId());
+                }
+            }
+            catch (Exception e) { logError("settling auction " + l.id(), e); }
+        }
     }
     /** Complete safe database-only work; retry only payouts confirmed not to have moved money. */
     public void recover() {
