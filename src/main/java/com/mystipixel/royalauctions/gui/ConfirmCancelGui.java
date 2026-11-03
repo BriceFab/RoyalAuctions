@@ -30,7 +30,7 @@ public final class ConfirmCancelGui extends AuctionGui {
         this.page = page;
 
         Map<String, String> ph = new HashMap<>();
-        ph.put("price", manager.vault().format(listing.displayPrice()));
+        ph.put("price", manager.format(listing.currency(), listing.displayPrice()));
         ph.put("bids", String.valueOf(listing.bidCount()));
 
         this.inventory = Bukkit.createInventory(this, template.size(), Text.color(template.title(ph)));
@@ -41,7 +41,7 @@ public final class ConfirmCancelGui extends AuctionGui {
             List<String> lore = new ArrayList<>();
             lore.add("");
             lore.add(manager.t("type-line", "type", manager.t(listing.isAuction() ? "type.auction" : "type.bin")));
-            lore.add(manager.t("price", "price", manager.vault().format(listing.displayPrice())));
+            lore.add(manager.t("price", "price", manager.format(listing.currency(), listing.displayPrice())));
             lore.add("");
             lore.add(manager.t("cancel-returns"));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));

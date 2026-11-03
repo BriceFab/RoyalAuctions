@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.data;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalcommon.storage.Dialect;
 import com.mystipixel.royalcommon.storage.TxRunner;
 
@@ -20,7 +21,7 @@ public final class AuctionTransactions {
     public enum State { PREPARED, APPLYING, APPLIED, FAILED, READY, DONE }
     public record Operation(UUID id, Kind kind, State state, UUID listing, UUID collection,
                             UUID player, String playerName, double amount, long expiry,
-                            long created, long updated, String worker, String note) { }
+                            long created, long updated, String worker, String note, String currency) { }
     public record Reservation(Operation operation, Listing listing, CollectionItem item) { }
     public record PaymentContext(UUID buyer, String itemName, boolean auction) { }
     public static final class Rejected extends SQLException {
@@ -103,16 +104,16 @@ public final class AuctionTransactions {
     }
     private static void insert(Connection c, Operation o) throws SQLException {
         update(c, "INSERT INTO ra_operations(id,kind,state,listing_id,collection_id,player_id,player_name,"
-                        + "amount,expiry,created_at,updated_at,worker,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        + "amount,expiry,created_at,updated_at,worker,note,currency) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 o.id, o.kind, o.state, o.listing, o.collection, o.player, o.playerName,
-                o.amount, o.expiry, o.created, o.updated, o.worker, o.note);
+                o.amount, o.expiry, o.created, o.updated, o.worker, o.note, o.currency);
     }
     private static Operation operation(ResultSet rs) throws SQLException {
         return new Operation(uuid(rs.getString("id")), Kind.valueOf(rs.getString("kind")),
                 State.valueOf(rs.getString("state")), uuid(rs.getString("listing_id")), uuid(rs.getString("collection_id")),
                 uuid(rs.getString("player_id")), rs.getString("player_name"), rs.getDouble("amount"),
                 rs.getLong("expiry"), rs.getLong("created_at"), rs.getLong("updated_at"),
-                rs.getString("worker"), rs.getString("note"));
+                rs.getString("worker"), rs.getString("note"), rs.getString("currency"));
     }
     public Operation get(UUID id) throws SQLException {
         try (Connection c = source.getConnection()) { return get(c, id); }
@@ -150,18 +151,18 @@ public final class AuctionTransactions {
     private static void validMoney(double amount, boolean zeroAllowed) throws Rejected {
         if (!Double.isFinite(amount) || amount < 0 || (!zeroAllowed && amount == 0)) throw new Rejected("invalid-amount");
     }
-    private Operation prepared(Kind kind, UUID listing, UUID collection, UUID player, String name,
-                               double amount, long expiry, String worker) {
+    private Operation prepared(UUID id, Kind kind, UUID listing, UUID collection, UUID player, String name,
+                               double amount, long expiry, String worker, String currency) {
         long now = System.currentTimeMillis();
-        return new Operation(UUID.randomUUID(), kind, State.PREPARED, listing, collection, player, name, amount, expiry, now, now, worker, "");
+        return new Operation(id, kind, State.PREPARED, listing, collection, player, name, amount, expiry, now, now, worker, "", currency);
     }
 
     public Reservation reserveBid(UUID listingId, UUID player, String name, double amount,
                                   DoubleUnaryOperator increment, long antiSnipeMillis, String worker) throws SQLException {
         validMoney(amount, false);
         return transaction(c -> {
-            Operation token = prepared(Kind.BID, listingId, null, player, name, amount, 0, worker);
-            lock(c, "listing/" + listingId, token.id);
+            UUID id = UUID.randomUUID();
+            lock(c, "listing/" + listingId, id);
             Listing l = listing(c, listingId);
             long now = System.currentTimeMillis();
             if (l.status() != ListingStatus.ACTIVE || !l.isAuction() || l.expiresAt() <= now || l.sellerId().equals(player))
@@ -170,28 +171,29 @@ public final class AuctionTransactions {
             if (!Double.isFinite(minimum) || amount < minimum || (l.hasBids() && amount <= l.currentBid()))
                 throw new Rejected("bid-too-low", "minimum", String.valueOf(minimum));
             long expiry = antiSnipeMillis > 0 ? Math.max(l.expiresAt(), Math.addExact(now, antiSnipeMillis)) : l.expiresAt();
-            Operation o = new Operation(token.id, token.kind, token.state, listingId, null, player, name,
-                    amount, expiry, now, now, worker, "");
+            Operation o = new Operation(id, Kind.BID, State.PREPARED, listingId, null, player, name,
+                    amount, expiry, now, now, worker, "", l.currency());
             insert(c, o);
             return new Reservation(o, l, null);
         });
     }
     public Reservation reserveBuy(UUID listingId, UUID player, String name, double expectedPrice, String worker) throws SQLException {
         return transaction(c -> {
-            Operation o = prepared(Kind.BUY, listingId, null, player, name, expectedPrice, 0, worker);
-            lock(c, "listing/" + listingId, o.id);
+            UUID id = UUID.randomUUID();
+            lock(c, "listing/" + listingId, id);
             Listing l = listing(c, listingId);
             validMoney(l.price(), false);
             if (l.status() != ListingStatus.ACTIVE || l.isAuction() || l.expiresAt() <= System.currentTimeMillis()
                     || l.sellerId().equals(player) || Double.compare(expectedPrice, l.price()) != 0)
                 throw new Rejected("price-changed");
+            Operation o = prepared(id, Kind.BUY, listingId, null, player, name, expectedPrice, 0, worker, l.currency());
             insert(c, o);
             return new Reservation(o, l, null);
         });
     }
     public Reservation reserveCapture(UUID owner, String name, byte[] bytes, String worker) throws SQLException {
         UUID collection = UUID.randomUUID();
-        Operation o = prepared(Kind.CAPTURE, null, collection, owner, name, 0, 0, worker);
+        Operation o = prepared(UUID.randomUUID(), Kind.CAPTURE, null, collection, owner, name, 0, 0, worker, AuctionCurrency.MONEY);
         return transaction(c -> {
             lock(c, "collection/" + collection, o.id);
             addItem(c, collection, owner, bytes, CollectionItem.Reason.CANCELLED, o.created);
@@ -200,7 +202,7 @@ public final class AuctionTransactions {
         });
     }
     public Reservation reserveClaim(UUID collection, UUID owner, String name, String worker) throws SQLException {
-        Operation o = prepared(Kind.CLAIM, null, collection, owner, name, 0, 0, worker);
+        Operation o = prepared(UUID.randomUUID(), Kind.CLAIM, null, collection, owner, name, 0, 0, worker, AuctionCurrency.MONEY);
         return transaction(c -> {
             lock(c, "collection/" + collection, o.id);
             CollectionItem ci = item(c, collection, owner);
@@ -211,7 +213,7 @@ public final class AuctionTransactions {
     public Reservation reserveCreate(Listing l, UUID collection, double fee, int limit, String worker) throws SQLException {
         validMoney(l.price(), false); validMoney(fee, true);
         if (l.expiresAt() <= System.currentTimeMillis()) throw new Rejected("invalid-duration");
-        Operation o = prepared(Kind.CREATE, l.id(), collection, l.sellerId(), l.sellerName(), fee, 0, worker);
+        Operation o = prepared(UUID.randomUUID(), Kind.CREATE, l.id(), collection, l.sellerId(), l.sellerName(), fee, 0, worker, l.currency());
         return transaction(c -> {
             lock(c, "seller/" + l.sellerId(), o.id);
             lock(c, "collection/" + collection, o.id);
@@ -301,7 +303,7 @@ public final class AuctionTransactions {
             case CLAIM -> update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
             case PAYOUT -> {
                 Listing l = listing(c, o.listing);
-                event(c, o.player, o.note, l.displayName(), o.amount);
+                event(c, o.player, o.note, l.displayName(), o.amount, o.currency);
             }
             case CAPTURE -> { /* The captured item is now available in collection. */ }
         }
@@ -309,20 +311,21 @@ public final class AuctionTransactions {
         release(c, id);
         return null;
     }
-    private static void event(Connection c, UUID player, String type, String name, double amount) throws SQLException {
-        update(c, "INSERT INTO ra_events(player_id,type,item,amount,created_at) VALUES (?,?,?,?,?)", player, type, name, amount, System.currentTimeMillis());
+    private static void event(Connection c, UUID player, String type, String name, double amount, String currency) throws SQLException {
+        update(c, "INSERT INTO ra_events(player_id,type,item,amount,created_at,currency) VALUES (?,?,?,?,?,?)",
+                player, type, name, amount, System.currentTimeMillis(), currency);
     }
     private static void payout(Connection c, UUID id, Listing l, UUID player, String name, double amount, String reason) throws SQLException {
         validMoney(amount, true);
         if (amount == 0) return;
         insert(c, new Operation(id, Kind.PAYOUT, State.READY, l.id(), null, player, name,
-                amount, 0, System.currentTimeMillis(), 0, null, reason));
+                amount, 0, System.currentTimeMillis(), 0, null, reason, l.currency()));
     }
     private static void settle(Connection c, Listing l, UUID buyer, String name, double price) throws SQLException {
         update(c, "UPDATE ra_listings SET status='SOLD',buyer_id=?,sold_at=? WHERE id=?", buyer, System.currentTimeMillis(), l.id());
         addItem(c, key("settlement/" + l.id()), buyer, l.itemData(), CollectionItem.Reason.PURCHASE, System.currentTimeMillis());
         payout(c, key("sale/" + l.id()), l, l.sellerId(), l.sellerName(), price, "SOLD");
-        if (l.isAuction()) event(c, buyer, "WON", l.displayName(), price);
+        if (l.isAuction()) event(c, buyer, "WON", l.displayName(), price, l.currency());
     }
 
     /** Ignore the sweep's snapshot; lock and re-read both the deadline and funded bid state. */
@@ -335,7 +338,7 @@ public final class AuctionTransactions {
             else {
                 update(c, "UPDATE ra_listings SET status='EXPIRED' WHERE id=?", l.id());
                 addItem(c, key("settlement/" + l.id()), l.sellerId(), l.itemData(), CollectionItem.Reason.EXPIRED, System.currentTimeMillis());
-                event(c, l.sellerId(), "EXPIRED", null, 1);
+                event(c, l.sellerId(), "EXPIRED", null, 1, l.currency());
             }
             release(c, id); return true;
         }); } catch (Rejected busy) { return false; }
@@ -370,6 +373,19 @@ public final class AuctionTransactions {
             List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;
         }
     }
+    /**
+     * Sets aside an operation recovery cannot finish now (a payout whose currency is not registered, a row that keeps
+     * failing) for about a minute, so it cannot fill every batch. Its state is left alone.
+     */
+    public void defer(UUID id) throws SQLException {
+        long now = System.currentTimeMillis();
+        // READY rows already wait a minute after updated_at; APPLIED and FAILED ones wait until it.
+        try (Connection c = source.getConnection()) {
+            update(c, "UPDATE ra_operations SET updated_at=CASE WHEN state='READY' THEN ? ELSE ? END "
+                    + "WHERE id=? AND state IN ('READY','APPLIED','FAILED')", now, now + RETRY_DELAY_MILLIS, id);
+        }
+    }
+    private static final long RETRY_DELAY_MILLIS = 60_000;
     public int heldCount() throws SQLException {
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
                 "SELECT COUNT(*) FROM ra_operations WHERE state='APPLYING' AND updated_at<?", System.currentTimeMillis() - 120_000);
@@ -380,16 +396,16 @@ public final class AuctionTransactions {
     }
     /** {@code holdSales}: leave READY sale payouts for their seller to collect (see {@link #unclaimedEarnings}). */
     public List<Operation> recoverable(int limit, boolean holdSales) throws SQLException {
-        long ready = System.currentTimeMillis() - 60_000, prepared = System.currentTimeMillis() - 120_000;
+        long now = System.currentTimeMillis(), ready = now - RETRY_DELAY_MILLIS, prepared = now - 120_000;
         // One index range per branch. READY rows are all payouts, so the ranges either side of 'SOLD'
         // skip the held sales without reading them.
         String readyBranch = holdSales
                 ? "SELECT * FROM ra_operations WHERE state='READY' AND note<'SOLD' AND updated_at<? UNION ALL "
                 + "SELECT * FROM ra_operations WHERE state='READY' AND note>'SOLD' AND updated_at<?"
                 : "SELECT * FROM ra_operations WHERE state='READY' AND updated_at<?";
-        Object[] args = holdSales ? new Object[] {prepared, ready, ready, limit} : new Object[] {prepared, ready, limit};
+        Object[] args = holdSales ? new Object[] {now, prepared, ready, ready, limit} : new Object[] {now, prepared, ready, limit};
         try (Connection c = source.getConnection(); PreparedStatement ps = statement(c,
-                "SELECT * FROM ra_operations WHERE state IN ('APPLIED','FAILED') UNION ALL "
+                "SELECT * FROM ra_operations WHERE state IN ('APPLIED','FAILED') AND updated_at<=? UNION ALL "
                         + "SELECT * FROM ra_operations WHERE state='PREPARED' AND updated_at<? UNION ALL "
                         + readyBranch + " ORDER BY updated_at,id LIMIT ?", args); ResultSet rs = ps.executeQuery()) {
             List<Operation> out = new ArrayList<>(); while (rs.next()) out.add(operation(rs)); return out;

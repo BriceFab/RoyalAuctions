@@ -61,11 +61,11 @@ public final class ListingsGui extends AuctionGui {
             lore.add("");
             if (listing.isAuction()) {
                 lore.add(manager.t("type-line", "type", manager.t("type.auction")));
-                lore.add(manager.t("current-bid", "price", manager.vault().format(listing.displayPrice())));
+                lore.add(manager.t("current-bid", "price", manager.format(listing.currency(), listing.displayPrice())));
                 lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             } else {
                 lore.add(manager.t("type-line", "type", manager.t("type.bin")));
-                lore.add(manager.t("price", "price", manager.vault().format(listing.price())));
+                lore.add(manager.t("price", "price", manager.format(listing.currency(), listing.price())));
             }
             lore.add(manager.t("ends-in", "time", manager.timeLeft(remaining)));
             lore.add("");

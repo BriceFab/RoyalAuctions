@@ -2,6 +2,7 @@ package com.mystipixel.royalauctions.service;
 
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
+import com.mystipixel.royalauctions.currency.Currencies;
 import com.mystipixel.royalauctions.data.*;
 import com.mystipixel.royalauctions.hooks.EconGuardHook;
 import com.mystipixel.royalauctions.hooks.VaultHook;
@@ -44,12 +45,14 @@ class RelogTest {
         EconGuardHook guard = mock(EconGuardHook.class); when(guard.allow(any())).thenReturn(true);
         when(plugin.getDataFolder()).thenReturn(folder.toFile()); when(plugin.getLogger()).thenReturn(Logger.getLogger("test"));
         when(plugin.isEnabled()).thenReturn(true);
-        when(vault.withdraw(any(), anyDouble())).thenReturn(true); when(config.bidIncrementFor(anyDouble())).thenReturn(10d);
+        when(vault.withdraw(any(), anyDouble())).thenReturn(true);
+        when(config.bidMinIncrement()).thenReturn(10d);
         item = mock(ItemStack.class); when(item.getAmount()).thenReturn(1); when(item.getMaxStackSize()).thenReturn(64);
         when(item.clone()).thenReturn(item); when(item.getType()).thenReturn(org.bukkit.Material.STONE);
         held = player(id); rejoined = player(id); seller = player(sellerId);
         bukkit = mockStatic(Bukkit.class);
         bukkit.when(() -> Bukkit.getPlayer(id)).thenReturn(held);
+        bukkit.when(() -> Bukkit.getOfflinePlayer(id)).thenReturn(held);
         bukkit.when(() -> Bukkit.getPlayer(sellerId)).thenReturn(seller);
         BukkitScheduler scheduler = mock(BukkitScheduler.class); bukkit.when(Bukkit::getScheduler).thenReturn(scheduler);
         when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(i -> { ((Runnable) i.getArgument(1)).run(); return mock(BukkitTask.class); });
@@ -60,7 +63,8 @@ class RelogTest {
             default -> call.callRealMethod();
         });
         db = new AuctionDatabase(folder.toFile(), new YamlConfiguration(), Logger.getLogger("test")); db.init();
-        service = new AuctionService(plugin, db, vault, config, mock(CategoryManager.class), mock(TierManager.class),
+        Currencies currencies = new Currencies(vault, config, mock(MessageManager.class), Logger.getLogger("test")); currencies.refresh(List.of());
+        service = new AuctionService(plugin, db, vault, currencies, config, mock(CategoryManager.class), mock(TierManager.class),
                 mock(MessageManager.class), guard, new Workers(plugin, Runnable::run));
     }
     @AfterEach void close() { db.close(); serialization.close(); bukkit.close(); }
@@ -75,7 +79,8 @@ class RelogTest {
         when(p.getInventory()).thenReturn(inventory);
         return p;
     }
-    void relog() { bukkit.when(() -> Bukkit.getPlayer(id)).thenReturn(rejoined); }
+    // the account's live Player is now the new session's; Bukkit.getOfflinePlayer answers with it too
+    void relog() { bukkit.when(() -> Bukkit.getPlayer(id)).thenReturn(rejoined); bukkit.when(() -> Bukkit.getOfflinePlayer(id)).thenReturn(rejoined); }
     void complete(AuctionTransactions.Operation o) throws Exception {
         assertTrue(db.transactions().begin(o.id(), "fixture")); db.transactions().acknowledge(o.id(), true); db.transactions().finish(o.id());
     }
@@ -139,7 +144,7 @@ class RelogTest {
         relog();
         List<String> done = new ArrayList<>();
         service.purchase(held, listing, () -> done.add("reopen"));
-        verify(vault).withdraw(held, 50);
+        verify(vault).withdraw(rejoined, 50);
         verify(held.getInventory(), never()).addItem(any(ItemStack[].class));
         assertEquals(1, db.collectionItems(id).size());
         assertTrue(done.isEmpty());
@@ -150,7 +155,7 @@ class RelogTest {
         relog();
         List<String> done = new ArrayList<>();
         service.placeBid(held, listing, 60, () -> done.add("reopen"));
-        verify(vault).withdraw(held, 60);
+        verify(vault).withdraw(rejoined, 60);
         assertEquals(id, db.getListing(listing.id()).orElseThrow().topBidderId());
         assertTrue(done.isEmpty());
     }

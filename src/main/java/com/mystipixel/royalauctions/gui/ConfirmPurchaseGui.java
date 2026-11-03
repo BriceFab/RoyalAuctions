@@ -38,13 +38,13 @@ public final class ConfirmPurchaseGui extends AuctionGui {
 
     private void render() {
         template.applyStatic(inventory, Map.of(
-                "price", manager.vault().format(listing.price()),
+                "price", manager.format(listing.currency(), listing.price()),
                 "seller", listing.sellerName()));
         int itemSlot = template.slotOf("item");
         if (itemSlot >= 0) {
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), List.of(
                     "",
-                    manager.t("price", "price", manager.vault().format(listing.price())),
+                    manager.t("price", "price", manager.format(listing.currency(), listing.price())),
                     manager.t("seller", "seller", listing.sellerName()))));
         }
     }

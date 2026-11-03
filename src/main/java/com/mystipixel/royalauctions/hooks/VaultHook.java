@@ -52,6 +52,12 @@ public final class VaultHook {
         return r.transactionSuccess();
     }
 
+    /** Digits the economy keeps after the decimal point, or -1 when it does not round. */
+    public int fractionalDigits() {
+        Economy current = economy;
+        return current == null ? -1 : current.fractionalDigits();
+    }
+
     public String format(double amount) {
         return economy == null ? String.format("%,.2f", amount) : economy.format(amount);
     }

@@ -1,5 +1,6 @@
 # Create Auction.
-# Placeholders: %price% %duration% %type_material% %type_name% %type_desc% %toggle_hint%
+# Placeholders: %price% %currency% %currency_hint% %duration% %type_material% %type_name% %type_desc%
+#               %toggle_hint%
 
 title: "&8Create Auction"
 rows: 5
@@ -32,9 +33,21 @@ slots:
       - "&7Current: &a%price%"
       - "&7Click to type a price"
     row: 4
-    column: 3
+    column: 2
     left-click:
       - id: ah_set_price
+
+  # The currency the price is in, cycling through the enabled ones (currencies in
+  # config.yml); with just one, the button only shows it.
+  - id: currency
+    item: sunflower name:"&eCurrency"
+    lore:
+      - "&7Current: &f%currency%"
+      - "%currency_hint%"
+    row: 4
+    column: 4
+    left-click:
+      - id: ah_toggle_currency
 
   - id: duration
     item: clock name:"&eDuration"
@@ -42,7 +55,7 @@ slots:
       - "&7Current: &f%duration%"
       - "&7Click to change"
     row: 4
-    column: 5
+    column: 6
     left-click:
       - id: ah_set_duration
 
@@ -52,7 +65,7 @@ slots:
       - "%type_desc%"
       - "%toggle_hint%"
     row: 4
-    column: 7
+    column: 8
     left-click:
       - id: ah_toggle_type
 

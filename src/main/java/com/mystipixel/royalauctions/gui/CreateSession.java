@@ -20,10 +20,20 @@ public final class CreateSession {
     private int durationHours;
     private ListingType type;
     private boolean awaitingPrice;
+    private String currency;
 
-    public CreateSession(int durationHours, ListingType type) {
+    public CreateSession(int durationHours, ListingType type, String currency) {
         this.durationHours = durationHours;
         this.type = type;
+        this.currency = currency;
+    }
+
+    public String currency() {
+        return currency;
+    }
+
+    public void currency(String currency) {
+        this.currency = currency;
     }
 
     /** Returns a copy so GUI rendering (which appends lore) can't mutate the stored item. */

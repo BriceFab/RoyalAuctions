@@ -47,7 +47,28 @@ class SchemaMigrationTest {
 
     @Test void freshInstallHasEveryListingColumn() throws Exception {
         open().close();
-        assertTrue(listingColumns().containsAll(Set.of("tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count", "enchantments")));
+        assertTrue(listingColumns().containsAll(Set.of("tier", "type", "current_bid", "top_bidder_id", "top_bidder_name", "bid_count", "enchantments", "currency")));
+    }
+
+    @Test void priceSortKeepsEachCurrencyTogether() throws Exception {
+        var db = open();
+        try (var c = connection()) {
+            double[] prices = {5, 300, 40, 2};
+            String[] currencies = {"money", "tokens", "money", "tokens"};
+            for (int i = 0; i < prices.length; i++) {
+                AuctionDatabase.insertListing(c, new Listing(UUID.randomUUID(), UUID.randomUUID(), "Seller", new byte[]{1}, "Item", "tools",
+                        null, ListingType.BIN, prices[i], System.currentTimeMillis(), System.currentTimeMillis() + 600_000,
+                        ListingStatus.ACTIVE, 0, null, null, 0, null, currencies[i]), ListingStatus.ACTIVE);
+            }
+            var low = db.browse(new ListingQuery(null, null, null, null, SortOrder.PRICE_LOW), 0, 10).rows();
+            assertEquals(List.of("money 5.0", "money 40.0", "tokens 2.0", "tokens 300.0"),
+                    low.stream().map(l -> l.currency() + " " + l.price()).toList());
+            var high = db.browse(new ListingQuery("tools", null, null, null, SortOrder.PRICE_HIGH), 0, 10).rows();
+            assertEquals(List.of("money 40.0", "money 5.0", "tokens 300.0", "tokens 2.0"),
+                    high.stream().map(l -> l.currency() + " " + l.price()).toList());
+        } finally {
+            db.close();
+        }
     }
 
     @Test void upgradesPreBiddingDatabaseAndNormalisesStoredIds() throws Exception {

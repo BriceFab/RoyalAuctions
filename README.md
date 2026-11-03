@@ -21,6 +21,7 @@ Part of a suite with [RoyalBank](https://github.com/joogiebear/RoyalBank),
 - [Categories](#categories)
 - [Item tiers](#item-tiers)
 - [Confirmations](#confirmations)
+- [Currencies](#currencies)
 - [Storage](#storage)
 - [Reliability and recovery](#reliability-and-recovery)
 - [PlaceholderAPI](#placeholderapi)
@@ -348,6 +349,55 @@ refunds are still paid at once, and turning the option off pays out whatever is 
 
 Existing installs keep their `gui/collection.yml`; copy the `earnings` slot from the bundled file to
 get the button (effect `ah_claim_earnings`, placeholder `%earnings%`).
+
+## Currencies
+
+Listings are priced in Vault money by default. Other plugins can add currencies: each listing keeps
+the currency it was created in, and its bids, fee, payouts and outbid refunds all use it.
+
+```yaml
+currencies:
+  money:
+    enabled: true
+  tokens:             # registered by another plugin
+    enabled: true     # off until enabled here
+```
+
+- The create screen has a **Currency** button cycling through the enabled currencies that are
+  registered. Its label is `currencies.<id>` in `messages.yml` (the id when missing). Prices with
+  more decimals than the currency allows are refused.
+- `listings.min-price`, `listings.max-price`, `listings.fee` and `bidding.min-increment` apply to
+  every currency, in the listing's currency; fees and bid increments are rounded up to its decimals.
+  Money follows the Vault economy's `fractionalDigits()`; an economy that does not round (-1) keeps
+  every digit.
+- While a listing's currency is not registered, buying and bidding on it are refused and payouts in
+  it wait; they are never paid in another currency.
+- Sorting by price keeps each currency's listings together: currencies by id, then price within each.
+- Unclaimed earnings, the collection button and join reminders show one total per currency.
+- EconGuard reports and its trade veto only cover money.
+- Existing installs keep their `gui/` files: copy the `currency` slot from the bundled `create.yml`
+  (effect `ah_toggle_currency`). In `browse.yml`, `%price_formatted%` and `%starting_price_formatted%`
+  are in the listing's currency, while `%price%` stays a bare number. In `messages.yml`,
+  `gui.bid-price-line` and `gui.bin-price-line` now get the formatted amount: remove a unit written
+  after `{price}`.
+
+### Adding a currency
+
+Implement `com.mystipixel.royalauctions.api.AuctionCurrency` and register it with Bukkit's
+`ServicesManager` (`softdepend: [RoyalAuctions]`). RoyalAuctions follows registrations and
+unregistrations as they happen. `scale()` (digits after the decimal point) must be 0 to 6 and stay
+the same for an id; see its Javadoc for amounts recorded before a change.
+
+```java
+getServer().getServicesManager().register(AuctionCurrency.class, new TokenCurrency(), this, ServicePriority.Normal);
+```
+
+`withdraw` and `deposit` are called on the main thread and may complete on any thread. Each call
+carries the journal operation ID. After applying it successfully, return true for repeats without
+moving value again. A deposit returning false may be retried with the same ID. `false` means
+nothing moved (a refused withdrawal, a deposit to retry later); completing exceptionally means the
+outcome is unknown, and the exchange is held for `/ah recovery`. Shutdown waits up to ten seconds
+for answers still pending.
 
 ## Storage
 

@@ -32,15 +32,15 @@ public final class BidGui extends AuctionGui {
         this.search = search;
         this.sort = sort;
         this.page = page;
-        this.minBid = listing.nextMinBid(manager.config().bidIncrementFor(listing.currentBid()));
+        this.minBid = manager.service().minimumBid(listing);
         this.inventory = Bukkit.createInventory(this, template.size(), Text.color(template.title(Map.of())));
         render();
     }
 
     private void render() {
         template.applyStatic(inventory, Map.of(
-                "min_bid", manager.vault().format(minBid),
-                "current_bid", manager.vault().format(listing.displayPrice()),
+                "min_bid", manager.format(listing.currency(), minBid),
+                "current_bid", manager.format(listing.currency(), listing.displayPrice()),
                 "seller", listing.sellerName()));
 
         int itemSlot = template.slotOf("item");
@@ -50,11 +50,11 @@ public final class BidGui extends AuctionGui {
             lore.add("");
             lore.add(manager.t("seller", "seller", listing.sellerName()));
             if (listing.hasBids()) {
-                lore.add(manager.t("current-bid", "price", manager.vault().format(listing.currentBid())));
+                lore.add(manager.t("current-bid", "price", manager.format(listing.currency(), listing.currentBid())));
                 lore.add(manager.t("top-bidder", "bidder", listing.topBidderName()));
                 lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             } else {
-                lore.add(manager.t("starting-bid", "price", manager.vault().format(listing.price())));
+                lore.add(manager.t("starting-bid", "price", manager.format(listing.currency(), listing.price())));
                 lore.add(manager.t("no-bids"));
             }
             lore.add(manager.t("ends-in", "time", manager.timeLeft(remaining)));

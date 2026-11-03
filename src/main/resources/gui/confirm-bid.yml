@@ -1,5 +1,6 @@
 # Confirm Bid. Shown before a bid is placed (disable with confirmations.bid: false in config.yml).
 # Placeholders: %bid% %current_bid% %seller% %balance%
+# %balance% is the Vault balance on money listings; other currencies show gui.balance-unknown.
 
 title: "&8Confirm Bid"
 rows: 3

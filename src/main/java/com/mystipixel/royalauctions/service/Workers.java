@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -67,6 +68,24 @@ public final class Workers {
             inFlight.decrementAndGet();
             plugin.getLogger().warning("Dropped an auction database task submitted after shutdown.");
         }
+    }
+
+    /**
+     * Makes shutdown wait for a currency provider's answer too. Work chained on the returned future
+     * runs before the wait ends, so its acknowledgement is queued before storage closes.
+     */
+    public <T> CompletableFuture<T> track(CompletableFuture<T> pending) {
+        inFlight.incrementAndGet();
+        CompletableFuture<T> tracked = new CompletableFuture<>();
+        pending.whenComplete((value, failure) -> {
+            try {
+                if (failure != null) tracked.completeExceptionally(failure);
+                else tracked.complete(value);
+            } finally {
+                inFlight.decrementAndGet();
+            }
+        });
+        return tracked;
     }
 
     /** Main-thread work, queued here rather than in Bukkit so shutdown can drain it. */

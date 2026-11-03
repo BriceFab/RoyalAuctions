@@ -103,10 +103,10 @@ class MessageRenderTest {
         assertEquals("Pending auction operations, page " + 2 + " (up to 50): " + 7,
                 m.text("recovery.header", "page", "2", "count", "7"));
         UUID player = UUID.randomUUID();
-        String old = id + " " + "BUY" + " " + "APPLYING" + " player=" + player + " amount=" + 12.5 + " listing=" + null
+        String old = id + " " + "BUY" + " " + "APPLYING" + " player=" + player + " amount=" + 12.5 + " currency=money listing=" + null
                 + " collection=" + null + " origin=" + "w1" + " updated=" + java.time.Instant.ofEpochMilli(0);
         assertEquals(old, m.text("recovery.entry", "id", id.toString(), "kind", "BUY", "state", "APPLYING",
-                "player", player.toString(), "amount", String.valueOf(12.5), "listing", "null", "collection", "null",
+                "player", player.toString(), "amount", String.valueOf(12.5), "currency", "money", "listing", "null", "collection", "null",
                 "origin", "w1", "updated", java.time.Instant.ofEpochMilli(0).toString()));
         assertEquals("Recovery refused: The originating server is still active. Stop that process before reconciliation.",
                 m.text("recovery.refused", "reason", m.text("exchange.reasons.origin-active")));
@@ -131,7 +131,7 @@ class MessageRenderTest {
 
     @Test
     void menuLabelsAreStyledAsBefore() throws Exception {
-        GuiManager gui = new GuiManager(null, null, null, null, null, bundled(), null, null, null);
+        GuiManager gui = new GuiManager(null, null, null, null, null, bundled(), null, null, null, null);
         assertEquals("&e> " + "&fNo Filter", gui.t("format.selected", "label", gui.t("format.filter", "label", gui.t("no-filter"))));
         assertEquals("&8  " + "No Filter", gui.t("format.unselected", "label", "No Filter"));
         assertEquals("&7" + "None", gui.t("format.no-tier", "label", gui.t("none")));
@@ -142,7 +142,7 @@ class MessageRenderTest {
 
     @Test
     void timeLeftIsTheOldFormat() throws Exception {
-        GuiManager gui = new GuiManager(null, null, null, null, null, bundled(), null, null, null);
+        GuiManager gui = new GuiManager(null, null, null, null, null, bundled(), null, null, null, null);
         for (long millis : new long[] {-5, 0, 999, 1_000, 59_999, 60_000, 61_000, 3_599_000, 3_600_000, 3_661_000,
                 86_399_000, 86_400_000, 90_061_000, 864_000_000L}) {
             assertEquals(oldTimeLeft(millis), gui.timeLeft(millis), millis + " ms");

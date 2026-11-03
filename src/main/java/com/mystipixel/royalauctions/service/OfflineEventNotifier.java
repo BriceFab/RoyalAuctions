@@ -1,10 +1,9 @@
 package com.mystipixel.royalauctions.service;
 
 import com.mystipixel.royalauctions.config.PluginConfig;
+import com.mystipixel.royalauctions.currency.Currencies;
 import com.mystipixel.royalauctions.data.AuctionDatabase;
-import com.mystipixel.royalauctions.data.AuctionTransactions;
 import com.mystipixel.royalauctions.data.OfflineEvent;
-import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -39,7 +38,7 @@ public final class OfflineEventNotifier implements Listener {
     private final JavaPlugin plugin;
     private final AuctionDatabase db;
     private final MessageManager messages;
-    private final VaultHook vault;
+    private final Currencies currencies;
     private final PluginConfig config;
     private final Workers workers;
     private final Set<UUID> delivering = ConcurrentHashMap.newKeySet();
@@ -49,20 +48,21 @@ public final class OfflineEventNotifier implements Listener {
     // Newest event id the last full poll saw; the per-player lookup runs only once it moves.
     private volatile long polledEventId = -1;
 
-    private record Waiting(int items, double earnings) {
-        static final Waiting NOTHING = new Waiting(0, 0);
+    // earnings: per currency, never summed across currencies
+    private record Waiting(int items, Map<String, Double> earnings) {
+        static final Waiting NOTHING = new Waiting(0, Map.of());
 
         boolean any() {
-            return items > 0 || earnings > 0;
+            return items > 0 || !earnings.isEmpty();
         }
     }
 
-    public OfflineEventNotifier(JavaPlugin plugin, AuctionDatabase db, MessageManager messages, VaultHook vault,
+    public OfflineEventNotifier(JavaPlugin plugin, AuctionDatabase db, MessageManager messages, Currencies currencies,
                                 PluginConfig config, Workers workers) {
         this.plugin = plugin;
         this.db = db;
         this.messages = messages;
-        this.vault = vault;
+        this.currencies = currencies;
         this.config = config;
         this.workers = workers;
     }
@@ -140,7 +140,7 @@ public final class OfflineEventNotifier implements Listener {
             boolean pointedAtCollect = !events.isEmpty() && send(player, List.copyOf(events.values()));
             if (waiting.any() && !pointedAtCollect) {
                 messages.send(player, "collection.waiting", "items", String.valueOf(waiting.items()),
-                        "earnings", vault.format(waiting.earnings()));
+                        "earnings", currencies.formatTotals(waiting.earnings(), messages.text("gui.amount-separator")));
             }
             if (events.isEmpty()) {
                 finish(id);
@@ -162,12 +162,8 @@ public final class OfflineEventNotifier implements Listener {
 
     private Waiting waiting(UUID id) throws SQLException {
         int items = db.countCollectionItems(id);
-        double earnings = 0;
-        if (config.manualEarnings()) {
-            for (AuctionTransactions.Operation payout : db.transactions().unclaimedEarnings(id)) {
-                earnings += payout.amount();
-            }
-        }
+        Map<String, Double> earnings = config.manualEarnings()
+                ? AuctionService.earningsByCurrency(db.transactions().unclaimedEarnings(id)) : Map.of();
         return new Waiting(items, earnings);
     }
 
@@ -200,13 +196,12 @@ public final class OfflineEventNotifier implements Listener {
                 continue;
             }
             String item = event.item() == null ? messages.text("away.unknown-item") : event.item();
+            String amount = currencies.format(event.currency(), event.amount());
             switch (event.type()) {
-                case OfflineEvent.SOLD -> messages.send(player, "away.sold",
-                        "item", item, "amount", vault.format(event.amount()));
-                case OfflineEvent.OUTBID -> messages.send(player, "away.outbid",
-                        "item", item, "amount", vault.format(event.amount()));
+                case OfflineEvent.SOLD -> messages.send(player, "away.sold", "item", item, "amount", amount);
+                case OfflineEvent.OUTBID -> messages.send(player, "away.outbid", "item", item, "amount", amount);
                 case OfflineEvent.WON -> {
-                    messages.send(player, "away.won", "item", item, "amount", vault.format(event.amount()));
+                    messages.send(player, "away.won", "item", item, "amount", amount);
                     pointedAtCollect = true;
                 }
                 default -> {

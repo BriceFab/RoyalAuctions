@@ -1,8 +1,10 @@
 package com.mystipixel.royalauctions;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.command.AuctionCommand;
 import com.mystipixel.royalauctions.config.PluginConfig;
+import com.mystipixel.royalauctions.currency.Currencies;
 import com.mystipixel.royalauctions.data.AuctionDatabase;
 import com.mystipixel.royalauctions.gui.AuctionGuiListener;
 import com.mystipixel.royalauctions.gui.GuiManager;
@@ -22,6 +24,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServiceRegisterEvent;
 import org.bukkit.event.server.ServiceUnregisterEvent;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.enchantments.Enchantment;
@@ -51,6 +54,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
     private PluginConfig config;
     private MessageManager messages;
     private VaultHook vault;
+    private Currencies currencies;
     private CategoryManager categories;
     private com.mystipixel.royalauctions.hooks.RarityRegistry rarities;
     private com.mystipixel.royalauctions.tier.TierManager tiers;
@@ -140,10 +144,12 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
                     ? "; flagged players can't bid or buy when EconGuard's enforcement.block-flagged-trades is on."
                     : "; this EconGuard predates the pre-trade veto, so nothing is blocked."));
         }
+        this.currencies = new Currencies(vault, config, messages, getLogger());
+        refreshCurrencies(null);
         // At least two, so a long job (enchantment backfill, language files) cannot hold up exchanges on SQLite.
         this.workers = new Workers(this, Math.max(2, database.poolSize()));
         try {
-            this.service = new AuctionService(this, database, vault, config, categories, tiers, messages, econGuard, workers);
+            this.service = new AuctionService(this, database, vault, currencies, config, categories, tiers, messages, econGuard, workers);
         } catch (RuntimeException e) {
             getLogger().log(Level.SEVERE, "Cannot load payment records safely; disabling RoyalAuctions", e);
             getServer().getPluginManager().disablePlugin(this);
@@ -154,11 +160,11 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         this.menus = new MenuManager(this);
         this.textInput = new TextInput(this, messages);
         getServer().getPluginManager().registerEvents(textInput, this);
-        this.guiManager = new GuiManager(this, service, config, categories, tiers, messages, vault, menus, textInput);
+        this.guiManager = new GuiManager(this, service, config, categories, tiers, messages, vault, currencies, menus, textInput);
         loadSearchTerms();
 
         getServer().getPluginManager().registerEvents(new AuctionGuiListener(guiManager), this);
-        var notifier = new OfflineEventNotifier(this, database, messages, vault, config, workers);
+        var notifier = new OfflineEventNotifier(this, database, messages, currencies, config, workers);
         getServer().getPluginManager().registerEvents(notifier, this);
         service.eventNotifier(notifier::notifyOnline);
         service.lease(database.lease(serverId));
@@ -214,11 +220,27 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         }
     }
 
+    // Main thread. leaving: a registration being removed, in case it is still listed while its event runs.
+    private void refreshCurrencies(RegisteredServiceProvider<?> leaving) {
+        List<AuctionCurrency> providers = new ArrayList<>();
+        for (RegisteredServiceProvider<AuctionCurrency> registration
+                : getServer().getServicesManager().getRegistrations(AuctionCurrency.class)) {
+            if (registration != leaving) {
+                providers.add(registration.getProvider());
+            }
+        }
+        currencies.refresh(providers);
+    }
+
     // Completes a late startup, then follows Vault's choice of provider so a higher-priority one
-    // registering later (e.g. an EcoBits currency) is not ignored.
+    // registering later (e.g. an EcoBits currency) is not ignored. Also follows auction currency providers.
     private final class EconomyWaiter implements Listener {
         @EventHandler
         public void onServiceRegister(ServiceRegisterEvent event) {
+            if (event.getProvider().getService() == AuctionCurrency.class) {
+                if (fullyEnabled) onMain(() -> refreshCurrencies(null));
+                return;
+            }
             if (event.getProvider().getService() != Economy.class) {
                 return;
             }
@@ -234,7 +256,10 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
 
         @EventHandler
         public void onServiceUnregister(ServiceUnregisterEvent event) {
-            if (fullyEnabled && event.getProvider().getService() == Economy.class) {
+            if (fullyEnabled && event.getProvider().getService() == AuctionCurrency.class) {
+                RegisteredServiceProvider<?> leaving = event.getProvider();
+                onMain(() -> refreshCurrencies(leaving));
+            } else if (fullyEnabled && event.getProvider().getService() == Economy.class) {
                 refreshEconomy();
             }
         }
@@ -244,7 +269,14 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             if (vault.setup() && !Objects.equals(before, vault.providerName())) {
                 getLogger().info("Vault economy provider changed from " + before + " to "
                         + vault.providerName() + "; auctions now use it.");
+                refreshCurrencies(null); // money's scale comes from the provider
             }
+        }
+
+        // A provider may register from its own thread; the currency list is only changed on main.
+        private void onMain(Runnable task) {
+            if (getServer().isPrimaryThread()) task.run();
+            else getServer().getScheduler().runTask(RoyalAuctionsPlugin.this, task);
         }
     }
 
@@ -326,6 +358,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
             return; // /ah is not registered until then, but keep this safe to call
         }
         menus.reload();
+        refreshCurrencies(null);
         loadSearchTerms();
         scheduleExpiryTask();
         schedulePruneTask();

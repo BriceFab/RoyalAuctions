@@ -68,7 +68,7 @@ public final class BidsGui extends AuctionGui {
             lore.add("");
             lore.add(manager.t(winning ? "top-bidder-badge" : "outbid-badge"));
             lore.add(manager.t("seller", "seller", listing.sellerName()));
-            lore.add(manager.t("current-bid", "price", manager.vault().format(listing.displayPrice())));
+            lore.add(manager.t("current-bid", "price", manager.format(listing.currency(), listing.displayPrice())));
             lore.add(manager.t("bids", "bids", String.valueOf(listing.bidCount())));
             if (!winning) {
                 lore.add(manager.t("leader", "bidder", listing.topBidderName() == null ? manager.t("no-leader") : listing.topBidderName()));

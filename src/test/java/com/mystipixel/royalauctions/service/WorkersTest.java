@@ -4,6 +4,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Logger;
 
@@ -34,6 +35,19 @@ class WorkersTest {
         workers.shutdown(5_000);
         assertEquals(List.of("database", "main", "acknowledge"), steps);
         assertTrue(workers.closing());
+    }
+
+    @Test void shutdownWaitsForATrackedCurrencyAnswerAndItsAcknowledgement() {
+        Workers workers = new Workers(disabledPlugin(), 2);
+        List<String> steps = new CopyOnWriteArrayList<>();
+        CompletableFuture<Boolean> answer = new CompletableFuture<>();
+        workers.track(answer).thenAccept(applied -> workers.async(() -> steps.add("acknowledge " + applied)));
+        CompletableFuture.runAsync(() -> {
+            try { Thread.sleep(50); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            answer.complete(true);
+        });
+        workers.shutdown(5_000);
+        assertEquals(List.of("acknowledge true"), steps);
     }
 
     @Test void workSubmittedAfterShutdownIsDroppedNotRun() {

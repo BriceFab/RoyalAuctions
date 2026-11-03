@@ -193,8 +193,12 @@ public final class BrowseGui extends AuctionGui {
 
         Map<String, String> ph = new HashMap<>();
         ph.put("seller", listing.sellerName());
+        // price and starting_price stay bare numbers for menus written before currencies
         ph.put("price", GuiUtil.comma(listing.displayPrice()));
         ph.put("starting_price", GuiUtil.comma(listing.price()));
+        ph.put("price_formatted", manager.format(listing.currency(), listing.displayPrice()));
+        ph.put("starting_price_formatted", manager.format(listing.currency(), listing.price()));
+        ph.put("currency", manager.currencies().name(listing.currency()));
         ph.put("bids", String.valueOf(listing.bidCount()));
         ph.put("top_bidder", listing.topBidderName() == null ? manager.t("none") : listing.topBidderName());
         ph.put("ends_in", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis()));
@@ -218,11 +222,11 @@ public final class BrowseGui extends AuctionGui {
         lore.add("");
         lore.add(manager.t("seller", "seller", ph.get("seller")));
         if (listing.isAuction()) {
-            lore.add(manager.t("bid-price-line", "label", ph.get("bid_label"), "price", ph.get("price")));
+            lore.add(manager.t("bid-price-line", "label", ph.get("bid_label"), "price", ph.get("price_formatted")));
             lore.add(manager.t("top-bidder", "bidder", ph.get("top_bidder")));
             lore.add(manager.t("bids", "bids", ph.get("bids")));
         } else {
-            lore.add(manager.t("bin-price-line", "price", ph.get("price")));
+            lore.add(manager.t("bin-price-line", "price", ph.get("price_formatted")));
         }
         lore.add("");
         lore.add(manager.t("ends-in", "time", ph.get("ends_in")));

@@ -3,6 +3,8 @@ package com.mystipixel.royalauctions.gui;
 import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
+import com.mystipixel.royalauctions.currency.Amounts;
+import com.mystipixel.royalauctions.currency.Currencies;
 import com.mystipixel.royalauctions.data.Listing;
 import com.mystipixel.royalauctions.data.ListingStatus;
 import com.mystipixel.royalauctions.data.ListingType;
@@ -35,6 +37,7 @@ public final class GuiManager {
     private final com.mystipixel.royalauctions.tier.TierManager tiers;
     private final MessageManager messages;
     private final VaultHook vault;
+    private final Currencies currencies;
     private final MenuManager menus;
     private final TextInput textInput;
     private final SearchTerms searchTerms = new SearchTerms();
@@ -46,7 +49,7 @@ public final class GuiManager {
 
     public GuiManager(JavaPlugin plugin, AuctionService service, PluginConfig config, CategoryManager categories,
                       com.mystipixel.royalauctions.tier.TierManager tiers, MessageManager messages,
-                      VaultHook vault, MenuManager menus, TextInput textInput) {
+                      VaultHook vault, Currencies currencies, MenuManager menus, TextInput textInput) {
         this.plugin = plugin;
         this.service = service;
         this.config = config;
@@ -54,6 +57,7 @@ public final class GuiManager {
         this.tiers = tiers;
         this.messages = messages;
         this.vault = vault;
+        this.currencies = currencies;
         this.menus = menus;
         this.textInput = textInput;
     }
@@ -171,7 +175,7 @@ public final class GuiManager {
         service.loadCollection(player.getUniqueId(), items -> {
             if (!current(player, ticket)) return;
             if (!config.manualEarnings()) {
-                showCollection(player, items, 0, page);
+                showCollection(player, items, Map.of(), page);
                 return;
             }
             service.loadEarnings(player.getUniqueId(), earnings -> {
@@ -180,7 +184,7 @@ public final class GuiManager {
         });
     }
 
-    private void showCollection(Player player, List<CollectionItem> items, double earnings, int page) {
+    private void showCollection(Player player, List<CollectionItem> items, Map<String, Double> earnings, int page) {
         CollectionGui gui = new CollectionGui(this, player, items, earnings);
         gui.populate(page);
         player.openInventory(gui.getInventory());
@@ -211,11 +215,38 @@ public final class GuiManager {
             messages.send(player, "general.no-permission");
             return;
         }
+        List<String> offered = currencies.offered();
+        if (offered.isEmpty()) {
+            endCreateSession(player, true);
+            messages.send(player, "create.no-currency");
+            return;
+        }
         ticket(player);
-        createSessions.computeIfAbsent(player.getUniqueId(),
-                k -> new CreateSession(config.defaultDurationHours(), config.defaultType()));
+        CreateSession session = createSessions.computeIfAbsent(player.getUniqueId(),
+                k -> new CreateSession(config.defaultDurationHours(), config.defaultType(), offered.getFirst()));
+        if (!offered.contains(session.currency())) {
+            selectCurrency(session, offered.getFirst());
+        }
         CreateAuctionGui gui = new CreateAuctionGui(this, player);
         player.openInventory(gui.getInventory());
+    }
+
+    /** Moves the create session to the next currency the player may list in. */
+    public void toggleCurrency(Player player) {
+        CreateSession s = createSessions.get(player.getUniqueId());
+        List<String> offered = currencies.offered();
+        if (s == null || offered.isEmpty()) {
+            return;
+        }
+        selectCurrency(s, offered.get((offered.indexOf(s.currency()) + 1) % offered.size()));
+    }
+
+    // A price typed for another currency only stays if it can be paid in this one.
+    private void selectCurrency(CreateSession s, String currency) {
+        s.currency(currency);
+        if (s.hasPrice() && !Amounts.fits(s.price(), currencies.scale(currency).orElse(0))) {
+            s.price(0);
+        }
     }
 
     public void openDuration(Player player) {
@@ -257,7 +288,7 @@ public final class GuiManager {
         ListingType type = s.type();
         long durationMillis = config.durationMillisFor(s.durationHours());
         s.busy(true);
-        service.createListing(player, s.collectionId(), item, price, type, durationMillis, listed -> {
+        service.createListing(player, s.collectionId(), item, price, type, durationMillis, s.currency(), listed -> {
             s.busy(false);
             if (createSessions.get(uuid) != s) return;
             if (listed) {
@@ -337,11 +368,14 @@ public final class GuiManager {
             }
             if (!input.isBlank() && !input.equalsIgnoreCase("cancel")) {
                 Double price = parsePositive(input);
+                int scale = currencies.scale(s.currency()).orElse(0);
                 if (price == null) {
                     messages.send(player, "general.invalid-number");
+                } else if (!Amounts.fits(price, scale)) {
+                    service.tooPrecise(player, scale);
                 } else {
                     s.price(price);
-                    messages.send(player, "create.price-set", "price", vault.format(price));
+                    messages.send(player, "create.price-set", "price", format(s.currency(), price));
                 }
             }
             openCreate(player);
@@ -360,8 +394,12 @@ public final class GuiManager {
                 return;
             }
             Double amount = parsePositive(input);
+            int scale = currencies.scale(listing.currency()).orElse(0);
             if (amount == null) {
                 messages.send(player, "general.invalid-number");
+                openBrowse(player, category, search, sort, page);
+            } else if (!Amounts.fits(amount, scale)) {
+                service.tooPrecise(player, scale);
                 openBrowse(player, category, search, sort, page);
             } else {
                 // A typed amount is easy to fat-finger, so it gets the same confirmation.
@@ -448,6 +486,20 @@ public final class GuiManager {
 
     public VaultHook vault() {
         return vault;
+    }
+
+    public Currencies currencies() {
+        return currencies;
+    }
+
+    /** An amount in the currency's own format. */
+    public String format(String currency, double amount) {
+        return currencies.format(currency, amount);
+    }
+
+    /** Several per-currency totals as one line. */
+    public String formatTotals(Map<String, Double> totals) {
+        return service.formatTotals(totals);
     }
 
     /** Translated item names and enchantment names that searches also match. */

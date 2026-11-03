@@ -51,16 +51,17 @@ listings:
   # The permission royalauctions.limit.<n> overrides this (the highest one a
   # player has wins), and royalauctions.limit.unlimited removes the cap.
   max-per-player: 7
-  # Lowest listing price, in Vault currency.
+  # Lowest listing price, in the listing's currency.
   min-price: 1.0
 
   # Categories that may be listed (category ids, see categories/). Empty = anything
   # can be sold. Anything left out is refused with the category-not-allowed message,
   # which should say where the item does belong.
   sellable-categories: []
-  # Highest listing price; -1 disables the upper bound.
+  # Highest listing price, in the listing's currency; -1 disables the upper bound.
   max-price: -1
-  # Listing fee charged to the seller when posting. Non-refundable.
+  # Listing fee charged to the seller when posting, in the listing's currency and rounded up
+  # to its decimals. Non-refundable.
   #   percent: fraction of the sale price (0.02 = 2%)
   #   minimum: floor for the fee regardless of percent
   fee:
@@ -79,12 +80,25 @@ listings:
 bidding:
   # Each new bid must beat the current bid by at least the larger of a flat
   # amount and a percentage of the current bid.
+  # min-increment is in the listing's currency; the raise is rounded up to its decimals.
   min-increment: 10.0
   increment-percent: 0.05
 
   # A bid in the final N seconds pushes the end time back out to N seconds away,
   # so a last-second bid can always be answered. 0 disables it.
   anti-snipe-seconds: 60
+
+# Currencies listings can be priced in. "money" is Vault's economy; other currencies come from
+# plugins that register a RoyalAuctions currency (see the README). Sellers pick the currency on the
+# create screen; each listing keeps its currency for its price, bids, fees and payouts.
+#   enabled: offer it for new listings (money: true by default, others: false). Listings already
+#            in a currency keep trading while it is registered.
+# The name shown on screens is currencies.<id> in messages.yml.
+currencies:
+  money:
+    enabled: true
+  # tokens:
+  #   enabled: true
 
 # Menus are configured per file in gui/ (title, size, filler, sounds, and each
 # button's slot, item, lore and click action). Run /ah reload after editing.

@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalauctions.data.Listing;
 import com.mystipixel.royalauctions.data.SortOrder;
 import com.mystipixel.royalauctions.gui.menu.MenuTemplate;
@@ -40,10 +41,13 @@ public final class ConfirmBidGui extends AuctionGui {
         this.page = page;
 
         Map<String, String> ph = new HashMap<>();
-        ph.put("bid", manager.vault().format(amount));
-        ph.put("current_bid", manager.vault().format(listing.displayPrice()));
+        String currency = listing.currency();
+        ph.put("bid", manager.format(currency, amount));
+        ph.put("current_bid", manager.format(currency, listing.displayPrice()));
         ph.put("seller", listing.sellerName());
-        ph.put("balance", manager.vault().format(manager.vault().balance(player)));
+        // Only Vault exposes a balance.
+        ph.put("balance", AuctionCurrency.MONEY.equals(currency)
+                ? manager.format(currency, manager.vault().balance(player)) : manager.t("balance-unknown"));
 
         this.inventory = Bukkit.createInventory(this, template.size(), Text.color(template.title(ph)));
         template.applyStatic(inventory, ph);
@@ -54,9 +58,9 @@ public final class ConfirmBidGui extends AuctionGui {
             lore.add("");
             lore.add(manager.t("seller", "seller", listing.sellerName()));
             lore.add(listing.hasBids()
-                    ? manager.t("current-bid", "price", manager.vault().format(listing.currentBid()))
-                    : manager.t("starting-bid", "price", manager.vault().format(listing.price())));
-            lore.add(manager.t("your-bid", "price", manager.vault().format(amount)));
+                    ? manager.t("current-bid", "price", manager.format(currency, listing.currentBid()))
+                    : manager.t("starting-bid", "price", manager.format(currency, listing.price())));
+            lore.add(manager.t("your-bid", "price", manager.format(currency, amount)));
             lore.add("");
             lore.add(manager.t("ends-in", "time", manager.timeLeft(listing.expiresAt() - System.currentTimeMillis())));
             inventory.setItem(itemSlot, GuiUtil.appendLore(listing.item(), lore));

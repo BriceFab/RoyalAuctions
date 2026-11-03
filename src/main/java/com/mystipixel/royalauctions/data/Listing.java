@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.data;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.UUID;
@@ -29,6 +30,7 @@ public final class Listing {
     private final String topBidderName;
     private final int bidCount;
     private final String enchantmentIndex;  // null until indexed, see EnchantmentIndex
+    private final String currency;          // every amount of the listing is in this currency
 
     private transient ItemStack cachedItem;
 
@@ -43,6 +45,14 @@ public final class Listing {
                    String category, String tier, ListingType type, double price, long createdAt, long expiresAt,
                    ListingStatus status, double currentBid, UUID topBidderId, String topBidderName, int bidCount,
                    String enchantmentIndex) {
+        this(id, sellerId, sellerName, itemData, displayName, category, tier, type, price, createdAt, expiresAt,
+                status, currentBid, topBidderId, topBidderName, bidCount, enchantmentIndex, AuctionCurrency.MONEY);
+    }
+
+    public Listing(UUID id, UUID sellerId, String sellerName, byte[] itemData, String displayName,
+                   String category, String tier, ListingType type, double price, long createdAt, long expiresAt,
+                   ListingStatus status, double currentBid, UUID topBidderId, String topBidderName, int bidCount,
+                   String enchantmentIndex, String currency) {
         this.id = id;
         this.sellerId = sellerId;
         this.sellerName = sellerName;
@@ -60,6 +70,7 @@ public final class Listing {
         this.topBidderName = topBidderName;
         this.bidCount = bidCount;
         this.enchantmentIndex = enchantmentIndex;
+        this.currency = currency;
     }
 
     public UUID id() {
@@ -136,6 +147,11 @@ public final class Listing {
 
     public String enchantmentIndex() {
         return enchantmentIndex;
+    }
+
+    /** Id of the currency the price, bids and payouts are in. */
+    public String currency() {
+        return currency;
     }
 
     public boolean isAuction() {
