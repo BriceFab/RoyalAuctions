@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.config;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalauctions.data.ListingType;
 import com.mystipixel.royalauctions.data.SortOrder;
 import org.bukkit.Material;
@@ -37,6 +38,8 @@ public final class PluginConfig {
     private double feeMinimum;
     private boolean instantDeliver;
     private boolean manualEarnings;
+    // Enabled currency ids: money first, then config order.
+    private final List<String> currencies = new ArrayList<>();
 
     private final List<DurationOption> durations = new ArrayList<>();
     private int defaultDurationHours;
@@ -94,6 +97,26 @@ public final class PluginConfig {
         this.defaultSort = SortOrder.fromString(c.getString("default-sort"), SortOrder.NEWEST);
         this.expirySweepTicks = Math.max(1, c.getLong("expiry-sweep-minutes", 5)) * 60L * 20L;
         this.closedRetentionDays = Math.max(0, c.getInt("closed-retention-days", 90));
+
+        loadCurrencies(section(c, "currencies"));
+    }
+
+    private void loadCurrencies(ConfigurationSection section) {
+        currencies.clear();
+        if (section.getBoolean(AuctionCurrency.MONEY + ".enabled", true)) {
+            currencies.add(AuctionCurrency.MONEY);
+        }
+        for (String id : section.getKeys(false)) {
+            if (id.equals(AuctionCurrency.MONEY)) {
+                continue;
+            }
+            if (!AuctionCurrency.validId(id)) {
+                plugin.getLogger().warning("Config warning: currencies." + id + " is not a valid currency id"
+                        + " (lower case letters, digits, '_' and '-'); ignoring it.");
+            } else if (section.getBoolean(id + ".enabled", false)) {
+                currencies.add(id);
+            }
+        }
     }
 
     private void loadDurations(ConfigurationSection listings) {
@@ -223,11 +246,6 @@ public final class PluginConfig {
         return plugin.getConfig().getConfigurationSection("category-options");
     }
 
-    // Never negative: a negative fee would make every listing fail as an invalid amount.
-    public double feeFor(double price) {
-        return Math.max(0, Math.max(feeMinimum, price * feePercent));
-    }
-
     public List<DurationOption> durations() {
         return durations;
     }
@@ -252,9 +270,9 @@ public final class PluginConfig {
         return bidIncrementPercent;
     }
 
-    /** Minimum raise over the current bid: the larger of the flat and percentage increments. */
-    public double bidIncrementFor(double currentBid) {
-        return Math.max(bidMinIncrement, currentBid * bidIncrementPercent);
+    /** Currencies new listings may be priced in ({@code currencies.<id>.enabled}): money first, then config order. */
+    public List<String> enabledCurrencies() {
+        return List.copyOf(currencies);
     }
 
     /** How close to expiry a bid must land to push the end time back out; 0 = anti-snipe off. */

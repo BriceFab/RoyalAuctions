@@ -3,6 +3,7 @@ package com.mystipixel.royalauctions.service;
 import com.mystipixel.royalauctions.config.PluginConfig;
 import com.mystipixel.royalauctions.data.AuctionDatabase;
 import com.mystipixel.royalauctions.data.OfflineEvent;
+import com.mystipixel.royalauctions.currency.Currencies;
 import com.mystipixel.royalauctions.hooks.VaultHook;
 import com.mystipixel.royalauctions.message.MessageManager;
 import org.bukkit.Bukkit;
@@ -38,6 +39,7 @@ class OfflineEventNotifierTest {
         config = mock(PluginConfig.class);
         when(plugin.isEnabled()).thenReturn(true); when(plugin.getLogger()).thenReturn(Logger.getLogger("test"));
         when(vault.format(anyDouble())).thenAnswer(i -> "$" + i.getArgument(0));
+        when(messages.text("gui.amount-separator")).thenReturn(", ");
         player = mock(Player.class); when(player.getUniqueId()).thenReturn(id); when(player.isOnline()).thenReturn(true);
         bukkit = mockStatic(Bukkit.class);
         bukkit.when(() -> Bukkit.getPlayer(id)).thenReturn(player);
@@ -45,7 +47,9 @@ class OfflineEventNotifierTest {
         when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(i -> { ((Runnable) i.getArgument(1)).run(); return mock(BukkitTask.class); });
         when(scheduler.runTaskLater(eq(plugin), any(Runnable.class), anyLong())).thenAnswer(i -> { ((Runnable) i.getArgument(1)).run(); return mock(BukkitTask.class); });
         db = new AuctionDatabase(folder.toFile(), new YamlConfiguration(), Logger.getLogger("test")); db.init();
-        notifier = new OfflineEventNotifier(plugin, db, messages, vault, config, new Workers(plugin, Runnable::run));
+        when(vault.fractionalDigits()).thenReturn(-1);
+        Currencies currencies = new Currencies(vault, config, messages, Logger.getLogger("test")); currencies.refresh(java.util.List.of());
+        notifier = new OfflineEventNotifier(plugin, db, messages, currencies, config, new Workers(plugin, Runnable::run));
     }
 
     @AfterEach void close() { db.close(); bukkit.close(); }

@@ -30,22 +30,24 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
             return;
         }
         boolean auction = s.type() == ListingType.AUCTION;
-        double fee = manager.config().feeFor(s.price());
+        String currency = s.currency();
+        double fee = manager.service().listingFee(currency, s.price());
 
         template.applyStatic(inventory, Map.of(
                 "type", manager.t(auction ? "type.auction-plain" : "type.bin-plain"),
-                "price", manager.vault().format(s.price()),
+                "price", manager.format(currency, s.price()),
+                "currency", manager.currencies().name(currency),
                 "duration", manager.t("time.duration", "hours", String.valueOf(s.durationHours())),
-                "fee", manager.vault().format(fee)));
+                "fee", manager.format(currency, fee)));
 
         int itemSlot = template.slotOf("item");
         if (itemSlot >= 0) {
             List<String> lore = new ArrayList<>();
             lore.add("");
             lore.add(manager.t("type-line", "type", manager.t(auction ? "type.auction" : "type.bin")));
-            lore.add(manager.t(auction ? "starting-bid" : "price", "price", manager.vault().format(s.price())));
+            lore.add(manager.t(auction ? "starting-bid" : "price", "price", manager.format(currency, s.price())));
             lore.add(manager.t("duration", "hours", String.valueOf(s.durationHours())));
-            lore.add(manager.t("listing-fee", "fee", manager.vault().format(fee)));
+            lore.add(manager.t("listing-fee", "fee", manager.format(currency, fee)));
             inventory.setItem(itemSlot, GuiUtil.appendLore(s.item(), lore));
         }
     }

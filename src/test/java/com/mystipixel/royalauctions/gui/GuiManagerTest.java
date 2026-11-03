@@ -34,7 +34,7 @@ class GuiManagerTest {
         Player inMenu = viewing(mock(AuctionGui.class));
         Player inChest = viewing(mock(InventoryHolder.class));
         Player inOwnInventory = viewing(null);
-        GuiManager manager = new GuiManager(null, null, null, null, null, null, null, null, null);
+        GuiManager manager = new GuiManager(null, null, null, null, null, null, null, null, null, null);
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(Bukkit::getOnlinePlayers).thenReturn(List.of(inMenu, inChest, inOwnInventory));
             manager.closeMenus();
@@ -53,7 +53,7 @@ class GuiManagerTest {
         when(held.getUniqueId()).thenReturn(id); when(held.isOnline()).thenReturn(true);
         when(rejoined.getUniqueId()).thenReturn(id); when(rejoined.isOnline()).thenReturn(true);
         AuctionService service = mock(AuctionService.class);
-        GuiManager manager = new GuiManager(null, service, null, null, null, null, null, null, null);
+        GuiManager manager = new GuiManager(null, service, null, null, null, null, null, null, null, null);
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getPlayer(id)).thenReturn(held);
             manager.openBids(held);

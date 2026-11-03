@@ -28,9 +28,12 @@ public final class CreateAuctionGui extends CreateFlowGui {
     private void render() {
         CreateSession s = manager.session(player.getUniqueId());
         boolean auction = s != null && s.type() == ListingType.AUCTION;
+        String currency = s == null ? null : s.currency();
 
         Map<String, String> placeholders = Map.of(
-                "price", s != null && s.hasPrice() ? manager.vault().format(s.price()) : manager.t("not-set"),
+                "price", s != null && s.hasPrice() ? manager.format(currency, s.price()) : manager.t("not-set"),
+                "currency", s == null ? manager.t("none") : manager.currencies().name(currency),
+                "currency_hint", manager.t(manager.currencies().offered().size() > 1 ? "currency-toggle" : "currency-only"),
                 "duration", durationLabel(s == null ? manager.config().defaultDurationHours() : s.durationHours()),
                 "type_material", template.text(auction ? "type-materials.auction" : "type-materials.bin"),
                 "type_name", manager.t(auction ? "type.auction" : "type.bin"),
@@ -82,6 +85,10 @@ public final class CreateAuctionGui extends CreateFlowGui {
             case SET_DURATION -> manager.openDuration(player);
             case TOGGLE_TYPE -> {
                 s.toggleType();
+                render();
+            }
+            case TOGGLE_CURRENCY -> {
+                manager.toggleCurrency(player);
                 render();
             }
             case CONTINUE -> {

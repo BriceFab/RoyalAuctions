@@ -40,6 +40,7 @@ class MySqlAuctionTransactionsTest extends AuctionTransactionsTest {
     @Override void failBegin() throws SQLException {
         sql("CREATE TRIGGER fail_begin BEFORE UPDATE ON ra_operations FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected'");
     }
+    @Override void dropIndex(String name, String table) throws SQLException { sql("DROP INDEX " + name + " ON " + table); }
     @Test void refusesNontransactionalAuctionTables() throws Exception {
         sql("ALTER TABLE ra_operations ENGINE=MyISAM");
         SQLException error = Assertions.assertThrows(SQLException.class, () -> tx.init());

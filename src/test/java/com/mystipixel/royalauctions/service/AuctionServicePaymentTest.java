@@ -2,7 +2,9 @@ package com.mystipixel.royalauctions.service;
 
 import com.mystipixel.royalauctions.data.*;
 import com.mystipixel.royalauctions.hooks.*;
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalauctions.config.PluginConfig;
+import com.mystipixel.royalauctions.currency.Currencies;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.tier.TierManager;
 import com.mystipixel.royalauctions.message.MessageManager;
@@ -46,13 +48,16 @@ class AuctionServicePaymentTest {
         BukkitScheduler scheduler = mock(BukkitScheduler.class); bukkit.when(Bukkit::getScheduler).thenReturn(scheduler);
         when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(i -> { ((Runnable)i.getArgument(1)).run(); return mock(BukkitTask.class); });
         when(scheduler.runTaskAsynchronously(eq(plugin), any(Runnable.class))).thenAnswer(i -> { ((Runnable)i.getArgument(1)).run(); return mock(BukkitTask.class); });
-        when(vault.withdraw(any(), anyDouble())).thenReturn(true); when(config.bidIncrementFor(anyDouble())).thenReturn(10d);
+        when(vault.withdraw(any(), anyDouble())).thenReturn(true);
+        when(vault.fractionalDigits()).thenReturn(-1);
+        when(config.bidMinIncrement()).thenReturn(10d); when(config.enabledCurrencies()).thenReturn(List.of("money"));
         when(guard.allow(any())).thenReturn(true);
         open();
     }
     void open() throws Exception {
         db = new AuctionDatabase(folder.toFile(), new YamlConfiguration(), Logger.getLogger("test")); db.init();
-        service = new AuctionService(plugin, db, vault, config, categories, tiers, messages, guard, new Workers(plugin, Runnable::run));
+        Currencies currencies = new Currencies(vault, config, messages, Logger.getLogger("test")); currencies.refresh(List.of());
+        service = new AuctionService(plugin, db, vault, currencies, config, categories, tiers, messages, guard, new Workers(plugin, Runnable::run));
     }
     @AfterEach void close() { if (db != null) db.close(); if (bukkit != null) bukkit.close(); }
     Player player(UUID id, String name) {
@@ -70,6 +75,8 @@ class AuctionServicePaymentTest {
     void sql(String sql) throws Exception {
         try (var c = DriverManager.getConnection("jdbc:sqlite:" + folder.resolve("auctions.db")); var s = c.createStatement()) { s.executeUpdate(sql); }
     }
+    // Reading money's scale on start is a Vault call too, so check the payment methods only.
+    void noPayments() { verify(vault, never()).withdraw(any(), anyDouble()); verify(vault, never()).deposit(any(), anyDouble()); }
     AuctionTransactions.Operation owed() throws Exception { return db.transactions().pending(50).stream().filter(o -> o.kind() == AuctionTransactions.Kind.PAYOUT).findFirst().orElseThrow(); }
 
     @Test void rejectedSellerCreditRemainsOwedAndIsNotAuditedAsPaid() throws Exception {
@@ -102,12 +109,12 @@ class AuctionServicePaymentTest {
         assertTrue(db.transactions().pending(50).isEmpty());
     }
     @Test void listingReservationFailureNeverChargesFeeOrNeedsRefund() throws Exception {
-        when(config.maxPerPlayer()).thenReturn(-1); when(config.feeFor(50)).thenReturn(5d); when(config.canSellCategory(any())).thenReturn(true);
+        when(config.maxPerPlayer()).thenReturn(-1); when(config.feeMinimum()).thenReturn(5d); when(config.canSellCategory(any())).thenReturn(true);
         when(categories.categorize(any())).thenReturn("misc"); when(seller.hasPermission("royalauctions.sell")).thenReturn(true);
         ItemStack item = mock(ItemStack.class); when(item.getType()).thenReturn(Material.STONE);
         try (var serialization = mockStatic(ItemSerialization.class)) {
             serialization.when(() -> ItemSerialization.serialize(item)).thenReturn(bytes);
-            service.createListing(seller, UUID.randomUUID(), item, 50, ListingType.BIN, 60_000, Assertions::assertFalse);
+            service.createListing(seller, UUID.randomUUID(), item, 50, ListingType.BIN, 60_000, AuctionCurrency.MONEY, Assertions::assertFalse);
         }
         verify(vault, never()).withdraw(any(), anyDouble()); verify(vault, never()).deposit(any(), anyDouble());
         assertTrue(db.transactions().pending(50).isEmpty());
@@ -132,13 +139,13 @@ class AuctionServicePaymentTest {
         journal.begin(id, sellerId, buyerId, "sale");
         assertThrows(IllegalStateException.class, () -> journal.attempt(id, "credit", sellerId, 50, true, () -> { throw new IllegalStateException("unknown"); }));
         db.close(); open(); service.retryPayments(); service.recover();
-        verifyNoInteractions(vault); assertEquals("IN_FLIGHT", journal.read(id).getProperty("leg.credit.status"));
+        noPayments(); assertEquals("IN_FLIGHT", journal.read(id).getProperty("leg.credit.status"));
     }
     @Test void listingWithoutSellPermissionIsRefusedBeforeAnyReservation() throws Exception {
         List<Boolean> results = new ArrayList<>();
-        service.createListing(seller, UUID.randomUUID(), mock(ItemStack.class), 50, ListingType.BIN, 60_000, results::add);
+        service.createListing(seller, UUID.randomUUID(), mock(ItemStack.class), 50, ListingType.BIN, 60_000, AuctionCurrency.MONEY, results::add);
         assertEquals(List.of(false), results);
-        verifyNoInteractions(vault); assertTrue(db.transactions().pending(50).isEmpty());
+        noPayments(); assertTrue(db.transactions().pending(50).isEmpty());
     }
     @Test void vetoedBuyerCannotBuyOrBid() throws Exception {
         when(guard.allow(buyerId)).thenReturn(false);

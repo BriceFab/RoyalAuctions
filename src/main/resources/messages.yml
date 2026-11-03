@@ -6,6 +6,9 @@ general:
   player-only: "{prefix}&cOnly players can use this command."
   reloaded: "{prefix}&aConfiguration reloaded."
   invalid-number: "{prefix}&cThat's not a valid number."
+  # An amount with more decimals than its currency has (currencies have their own scale).
+  whole-number: "{prefix}&cThis currency only takes whole amounts."
+  too-many-decimals: "{prefix}&cUse at most &f{digits}&c decimal place(s) in this currency."
   # /ah <player> with a name this server has never seen.
   unknown-player: "&cNo player named &f{player}&c has played here."
 
@@ -68,6 +71,8 @@ collection:
   full-inventory: "{prefix}&cYour inventory is full — make room first."
   claimed: "{prefix}&aClaimed &f{item}&a."
   earnings-claimed: "{prefix}&aCollected &f{amount} &afrom the sale of &f{item}&a."
+  # The currency of some earnings is not available right now; they stay to be collected later.
+  earnings-unavailable: "{prefix}&eYour {currency} earnings can't be paid right now. They stay here for later."
   no-earnings: "{prefix}&7You have no sale earnings to collect."
   # Sent a few seconds after join when items or sale earnings are waiting in the collection, for
   # example an item that was being listed when the player left. Not sent when the "away" summary
@@ -88,6 +93,8 @@ create:
   price-set: "{prefix}&aPrice set to &f{price}&a."
   need-item: "{prefix}&cPlace an item in the slot first."
   need-price: "{prefix}&cSet a price first."
+  # No enabled currency is registered right now (currencies.<id>.enabled in config.yml).
+  no-currency: "{prefix}&cThere is no currency you can list items in right now."
   cancelled: "{prefix}&7Auction creation cancelled — your item was returned."
 
 bid:
@@ -126,6 +133,8 @@ exchange:
   pending: "{prefix}&eThis exchange is pending recovery. Ask staff to check operation &f{operation}&e."
   declined: "{prefix}&eThe exchange could not be completed. Your previous auction and collection state was retained."
   invalid-listing: "{prefix}&cInvalid listing price or duration."
+  # The listing's currency (or the one picked to sell in) is not registered or not enabled right now.
+  currency-unavailable: "{prefix}&cThat currency is unavailable right now. Try again later."
   purchased: "{prefix}&aPurchase completed. Your item is saved in &f/ah collect&a."
   # Shown when EconGuard refuses a bid or purchase (enforcement.block-flagged-trades on, player flagged).
   # The other side is not told why: a flag is staff business.
@@ -144,6 +153,7 @@ exchange:
     item-changed: "The selected item changed."
     listing-limit: "You have reached your listing limit."
     cannot-cancel: "This listing cannot be cancelled."
+    currency-unavailable: "This listing's currency is unavailable right now."
     # The next ones are only seen by staff (claims of old payments and /ah recovery).
     payment-listing-gone: "The payment's listing no longer exists."
     unknown-operation: "Unknown operation."
@@ -161,12 +171,17 @@ recovery:
   # {reason} is one of exchange.reasons, or a database error.
   refused: "Recovery refused: {reason}"
   header: "Pending auction operations, page {page} (up to 50): {count}"
-  entry: "{id} {kind} {state} player={player} amount={amount} listing={listing} collection={collection} origin={origin} updated={updated}"
+  entry: "{id} {kind} {state} player={player} amount={amount} currency={currency} listing={listing} collection={collection} origin={origin} updated={updated}"
 
 # Buttons of the text input dialog (search, price, custom bid). Escape works like Cancel.
 input:
   confirm: "&aDone"
   cancel: "&cCancel"
+
+# Currency names shown on screens, by currency id; an id missing here shows as itself.
+# "money" is Vault's economy.
+currencies:
+  money: "Money"
 
 # Text inside the menus: item names, lore lines and filter labels. Colour codes work; {placeholders}
 # are filled in by the plugin.
@@ -203,8 +218,8 @@ gui:
   current-bid: "&7Current bid: &a{price}"
   starting-bid: "&7Starting bid: &a{price}"
   your-bid: "&7Your bid: &e{price}"
-  bid-price-line: "&6{label}: &e{price} coins"
-  bin-price-line: "&6Buy it now: &e{price} coins"
+  bid-price-line: "&6{label}: &e{price}"
+  bin-price-line: "&6Buy it now: &e{price}"
   top-bidder: "&7Top bidder: &f{bidder}"
   leader: "&7Leader: &f{bidder}"
   # {bidder} in leader while an auction has no bids.
@@ -214,6 +229,13 @@ gui:
   ends-in: "&7Ends in: &f{time}"
   duration: "&7Duration: &f{hours}h"
   listing-fee: "&7Listing fee: &c{fee}"
+  # Create screen, currency button: several currencies to pick from, or only one.
+  currency-toggle: "&7Click to switch currency"
+  currency-only: "&8The only currency you can list in"
+  # Confirm bid %balance% for currencies other than Vault money, which expose no balance.
+  balance-unknown: "-"
+  # Between per-currency totals, e.g. unclaimed earnings "$5.00, 120 tokens".
+  amount-separator: ", "
   top-bidder-badge: "&a&lTOP BIDDER"
   outbid-badge: "&c&lOUTBID"
   winning: "&7You're winning this one."

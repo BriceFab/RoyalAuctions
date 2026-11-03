@@ -49,6 +49,15 @@ class AuctionTransactionsTest {
         try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
         return l;
     }
+    Listing seedIn(ListingType type, String currency, double price) throws SQLException {
+        Listing l = new Listing(UUID.randomUUID(), seller, "Seller", bytes, "Test item", "misc", null, type, price,
+                System.currentTimeMillis(), System.currentTimeMillis() + 600_000, ListingStatus.ACTIVE, 0, null, null, 0, null, currency);
+        try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
+        return l;
+    }
+    AuctionTransactions.Operation payout() throws SQLException {
+        return tx.pending(50).stream().filter(o -> o.kind() == AuctionTransactions.Kind.PAYOUT).findFirst().orElseThrow();
+    }
     Listing current(Listing l) throws SQLException { return db.getListing(l.id()).orElseThrow(); }
     AuctionTransactions.Operation bid(Listing l, UUID bidder, double amount) throws SQLException {
         return tx.reserveBid(l.id(), bidder, "Bidder", amount, previous -> 10, 60_000, worker).operation();
@@ -177,7 +186,46 @@ class AuctionTransactionsTest {
         assertEquals(READY, tx.get(payout.id()).state());
     }
 
-    // An effect that answers later, from another thread.
+    @Test void aListingsCurrencyCarriesToItsOperationsPayoutsAndNotices() throws Exception {
+        var l = seedIn(ListingType.BIN, "tokens", 15);
+        assertEquals("tokens", current(l).currency());
+        var buy = tx.reserveBuy(l.id(), alice, "Alice", 15, worker).operation();
+        assertEquals("tokens", buy.currency());
+        complete(buy, true);
+        var payout = payout();
+        assertEquals("tokens", payout.currency()); assertEquals(15, payout.amount());
+        complete(payout, true);
+        var sold = db.peekEvents(seller).values().iterator().next();
+        assertEquals(OfflineEvent.SOLD, sold.type()); assertEquals("tokens", sold.currency()); assertEquals(15, sold.amount());
+    }
+
+    @Test void outbidRefundIsInTheListingsCurrency() throws Exception {
+        var l = seedIn(ListingType.AUCTION, "tokens", 100);
+        complete(bid(l, alice, 100), true); complete(bid(l, bob, 110), true);
+        var refund = payout();
+        assertEquals(alice, refund.player()); assertEquals("tokens", refund.currency()); assertEquals(100, refund.amount());
+    }
+
+    @Test void deferredAppliedOperationStepsAsideWithoutChangingState() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        assertTrue(tx.begin(o.id(), worker)); tx.acknowledge(o.id(), true);
+        assertEquals(List.of(o.id()), tx.recoverable(50).stream().map(AuctionTransactions.Operation::id).toList());
+        tx.defer(o.id());
+        assertTrue(tx.recoverable(50).isEmpty()); assertEquals(APPLIED, tx.get(o.id()).state());
+        assertEquals(1, count("ra_operation_locks"), "the listing stays reserved");
+        sql("UPDATE ra_operations SET updated_at=updated_at-60000 WHERE id=?", o.id());
+        assertEquals(1, tx.recoverable(50).size(), "back after a minute");
+    }
+
+    @Test void deferredPayoutMovesBehindTheRestOfTheQueue() throws Exception {
+        var l = seed(ListingType.BIN); complete(tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation(), true);
+        var payout = payout(); sql("UPDATE ra_operations SET updated_at=0 WHERE id=?", payout.id());
+        assertEquals(List.of(payout.id()), tx.recoverable(50).stream().map(AuctionTransactions.Operation::id).toList());
+        tx.defer(payout.id());
+        assertTrue(tx.recoverable(50).isEmpty()); assertEquals(READY, tx.get(payout.id()).state());
+    }
+
+    // An asynchronous currency answers later, from its own thread.
     @Test void asyncEffectIsAcknowledgedOnlyOnceItsAnswerArrives() throws Exception {
         var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
         var answer = new CompletableFuture<Boolean>(); List<ExternalEffectRunner.Result> results = new CopyOnWriteArrayList<>();
@@ -506,5 +554,57 @@ class AuctionTransactionsTest {
             assertEquals(Set.of(alice), db.playersWithEvents(List.of(alice, bob)));
             assertTrue(db.playersWithEvents(List.of(bob)).isEmpty());
         } finally { other.close(); }
+    }
+
+    // Schema upgrades with rows in flight, on every dialect: back to an older shape, fill it, reopen twice.
+    void dropIndex(String name, String table) throws SQLException { sql("DROP INDEX " + name); }
+    void downgradeTo(int version) throws SQLException {
+        db.close();
+        if (version < 3) {
+            dropIndex("idx_ra_listings_status_currency_price", "ra_listings");
+            dropIndex("idx_ra_listings_status_category_currency_price", "ra_listings");
+            for (String table : List.of("ra_listings", "ra_operations", "ra_events")) sql("ALTER TABLE " + table + " DROP COLUMN currency");
+        }
+        sql("UPDATE ra_schema_version SET version=? WHERE id=1", version);
+    }
+    int schemaVersion() throws SQLException {
+        try (var c = connection(); var s = c.createStatement(); var rs = s.executeQuery("SELECT version FROM ra_schema_version WHERE id=1")) {
+            assertTrue(rs.next()); return rs.getInt(1);
+        }
+    }
+
+    @Test void versionTwoRowsBecomeMoneyAndKeepTheirAmounts() throws Exception {
+        downgradeTo(2);
+        UUID bin = UUID.randomUUID(), auction = UUID.randomUUID(), sold = UUID.randomUUID(), payout = UUID.randomUUID(), held = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+        String listing = "INSERT INTO ra_listings (id,seller_id,seller_name,item_data,display_name,category,type,price,current_bid,"
+                + "top_bidder_id,top_bidder_name,bid_count,created_at,expires_at,status) VALUES (?,?,'Seller','AQID','Old item','misc',?,?,?,?,?,?,?,?,?)";
+        sql(listing, bin, seller, "BIN", 12.345, null, null, null, 0, now, now + 600_000, "ACTIVE");
+        sql(listing, auction, seller, "AUCTION", 10, 20.5, alice, "Alice", 1, now, now + 600_000, "ACTIVE");
+        sql(listing, sold, seller, "BIN", 9.99, null, null, null, 0, now, now, "SOLD");
+        String operation = "INSERT INTO ra_operations (id,kind,state,listing_id,player_id,player_name,amount,expiry,created_at,updated_at,worker,note)"
+                + " VALUES (?,?,?,?,?,?,?,0,?,?,?,?)";
+        sql(operation, payout, "PAYOUT", "READY", sold, seller, "Seller", 9.99, now, 0, null, "SOLD");
+        sql(operation, held, "BID", "APPLYING", auction, alice, "Alice", 20.5, now, now, "gone", "");
+        sql("INSERT INTO ra_events (player_id,type,item,amount,created_at) VALUES (?,'SOLD','Old item',9.99,?)", seller, now);
+
+        for (int reopen = 0; reopen < 2; reopen++) {
+            open();
+            assertEquals(AuctionDatabase.SCHEMA_VERSION, schemaVersion());
+            Listing listed = db.getListing(bin).orElseThrow();
+            assertEquals("money", listed.currency()); assertEquals(12.345, listed.price());
+            Listing bids = db.getListing(auction).orElseThrow();
+            assertEquals("money", bids.currency()); assertEquals(20.5, bids.currentBid()); assertEquals(alice, bids.topBidderId()); assertEquals(1, bids.bidCount());
+            var owed = tx.get(payout);
+            assertEquals(READY, owed.state()); assertEquals("money", owed.currency()); assertEquals(9.99, owed.amount());
+            var applying = tx.get(held);
+            assertEquals(APPLYING, applying.state()); assertEquals("money", applying.currency()); assertEquals(20.5, applying.amount());
+            var event = db.peekEvents(seller).values().iterator().next();
+            assertEquals("money", event.currency()); assertEquals(9.99, event.amount());
+            assertEquals(1, db.peekEvents(seller).size());
+            if (reopen == 0) db.close();
+        }
+        complete(tx.get(payout), true);
+        assertEquals(DONE, tx.get(payout).state());
     }
 }

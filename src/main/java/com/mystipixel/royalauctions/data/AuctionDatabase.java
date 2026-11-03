@@ -36,7 +36,7 @@ public final class AuctionDatabase {
         SQLITE, MYSQL
     }
 
-    static final int SCHEMA_VERSION = 2;
+    static final int SCHEMA_VERSION = 3;
     private static final int CHUNK = 500;
     // A server that has not heartbeat for this long is gone; its row only mattered for /ah recovery.
     private static final long WORKER_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1000;
@@ -131,6 +131,19 @@ public final class AuctionDatabase {
                     createIndex(st, "idx_ra_events_created", "ra_events(created_at)");
                 }
             }
+            if (from < 3) {
+                try (Statement st = c.createStatement()) {
+                    // Rows from before currencies were all Vault money.
+                    String currency = "VARCHAR(32) NOT NULL DEFAULT 'money'";
+                    addColumn(st, "ra_listings", "currency", currency);
+                    addColumn(st, "ra_operations", "currency", currency);
+                    addColumn(st, "ra_events", "currency", currency);
+                    // Price sorts group listings by currency, then order by price within each.
+                    createIndex(st, "idx_ra_listings_status_currency_price", "ra_listings(status, currency, price)");
+                    createIndex(st, "idx_ra_listings_status_category_currency_price",
+                            "ra_listings(status, category, currency, price)");
+                }
+            }
         });
         if (before < SCHEMA_VERSION) {
             logger.info("Database schema migrated from version " + before + " to " + SCHEMA_VERSION + ".");
@@ -189,14 +202,14 @@ public final class AuctionDatabase {
                     + "buyer_id CHAR(36),"
                     + "sold_at BIGINT)");
             // A NULL tier on older rows means "no rarity".
-            addColumn(st, "tier", "VARCHAR(32)");
-            addColumn(st, "type", "VARCHAR(16) NOT NULL DEFAULT 'BIN'");
-            addColumn(st, "current_bid", "DOUBLE PRECISION");
-            addColumn(st, "top_bidder_id", "CHAR(36)");
-            addColumn(st, "top_bidder_name", "VARCHAR(32)");
-            addColumn(st, "bid_count", "INT NOT NULL DEFAULT 0");
+            addColumn(st, "ra_listings", "tier", "VARCHAR(32)");
+            addColumn(st, "ra_listings", "type", "VARCHAR(16) NOT NULL DEFAULT 'BIN'");
+            addColumn(st, "ra_listings", "current_bid", "DOUBLE PRECISION");
+            addColumn(st, "ra_listings", "top_bidder_id", "CHAR(36)");
+            addColumn(st, "ra_listings", "top_bidder_name", "VARCHAR(32)");
+            addColumn(st, "ra_listings", "bid_count", "INT NOT NULL DEFAULT 0");
             // Search text for the item's enchantments. NULL = not indexed yet (rows from older versions).
-            addColumn(st, "enchantments", bigText());
+            addColumn(st, "ra_listings", "enchantments", bigText());
             // Category and tier ids are compared exactly (so the browse filters can use an index);
             // new rows are stored lowercase, and rows from older versions are brought in line here.
             st.executeUpdate("UPDATE ra_listings SET category=LOWER(category) WHERE category<>LOWER(category)");
@@ -244,25 +257,25 @@ public final class AuctionDatabase {
         return type == Type.MYSQL ? "BIGINT PRIMARY KEY AUTO_INCREMENT" : "INTEGER PRIMARY KEY AUTOINCREMENT";
     }
 
-    private void addColumn(Statement st, String column, String definition) throws SQLException {
+    private void addColumn(Statement st, String table, String column, String definition) throws SQLException {
         // Check the metadata rather than ALTERing and swallowing the error, which hides a failed
         // migration. Scope to this database: a null catalog means "every database" to Connector/J.
         // '_' is a metadata wildcard, so names are compared exactly. Failures stop startup.
         Connection c = st.getConnection();
-        try (ResultSet rs = c.getMetaData().getColumns(c.getCatalog(), null, "ra_listings", column)) {
+        try (ResultSet rs = c.getMetaData().getColumns(c.getCatalog(), null, table, column)) {
             while (rs.next()) {
-                if ("ra_listings".equalsIgnoreCase(rs.getString("TABLE_NAME"))
+                if (table.equalsIgnoreCase(rs.getString("TABLE_NAME"))
                         && column.equalsIgnoreCase(rs.getString("COLUMN_NAME"))) {
                     return;
                 }
             }
         }
         try {
-            st.executeUpdate("ALTER TABLE ra_listings ADD COLUMN " + column + " " + definition);
+            st.executeUpdate("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
         } catch (SQLException e) {
-            throw new SQLException("Migration failed: could not add ra_listings." + column + ": " + e.getMessage(), e);
+            throw new SQLException("Migration failed: could not add " + table + "." + column + ": " + e.getMessage(), e);
         }
-        logger.info("Migrated ra_listings: added column " + column + ".");
+        logger.info("Migrated " + table + ": added column " + column + ".");
     }
 
     // A failure stops the migration: the schema version is only stamped once every index exists.
@@ -293,8 +306,8 @@ public final class AuctionDatabase {
     static void insertListing(Connection c, Listing l, ListingStatus status) throws SQLException {
         String sql = "INSERT INTO ra_listings "
                 + "(id,seller_id,seller_name,item_data,display_name,category,tier,type,price,"
-                + "current_bid,top_bidder_id,top_bidder_name,bid_count,created_at,expires_at,status,enchantments) "
-                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                + "current_bid,top_bidder_id,top_bidder_name,bid_count,created_at,expires_at,status,enchantments,currency) "
+                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, l.id().toString());
             ps.setString(2, l.sellerId().toString());
@@ -313,6 +326,7 @@ public final class AuctionDatabase {
             ps.setLong(15, l.expiresAt());
             ps.setString(16, status.name());
             ps.setString(17, l.enchantmentIndex());
+            ps.setString(18, l.currency());
             ps.executeUpdate();
         }
     }
@@ -474,8 +488,9 @@ public final class AuctionDatabase {
     private static String orderBy(SortOrder sort) {
         return switch (sort) {
             case OLDEST -> "created_at ASC, id ASC";
-            case PRICE_LOW -> "price ASC, id ASC";
-            case PRICE_HIGH -> "price DESC, id ASC";
+            // Prices in different currencies don't compare, so each currency's listings stay together.
+            case PRICE_LOW -> "currency ASC, price ASC, id ASC";
+            case PRICE_HIGH -> "currency ASC, price DESC, id ASC";
             case ENDING_SOON -> "expires_at ASC, id ASC";
             case NEWEST -> "created_at DESC, id ASC";
         };
@@ -667,15 +682,26 @@ public final class AuctionDatabase {
 
     public void addEvent(UUID player, String type, String item, double amount, long createdAt)
             throws SQLException {
-        String sql = "INSERT INTO ra_events (player_id, type, item, amount, created_at) VALUES (?,?,?,?,?)";
+        addEvent(player, type, item, amount, createdAt, com.mystipixel.royalauctions.api.AuctionCurrency.MONEY);
+    }
+
+    public void addEvent(UUID player, String type, String item, double amount, long createdAt, String currency)
+            throws SQLException {
+        String sql = "INSERT INTO ra_events (player_id, type, item, amount, created_at, currency) VALUES (?,?,?,?,?,?)";
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, player.toString());
             ps.setString(2, type);
             ps.setString(3, item);
             ps.setDouble(4, amount);
             ps.setLong(5, createdAt);
+            ps.setString(6, currency);
             ps.executeUpdate();
         }
+    }
+
+    private static OfflineEvent mapEvent(ResultSet rs) throws SQLException {
+        return new OfflineEvent(rs.getString("type"), rs.getString("item"), rs.getDouble("amount"),
+                rs.getLong("created_at"), rs.getString("currency"));
     }
 
     /** The newest queued event's id, 0 when there are none; it only moves when an event is added or removed. */
@@ -718,11 +744,10 @@ public final class AuctionDatabase {
     public java.util.LinkedHashMap<Long, OfflineEvent> peekEvents(UUID player) throws SQLException {
         var out = new java.util.LinkedHashMap<Long, OfflineEvent>();
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
-                "SELECT id, type, item, amount, created_at FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
+                "SELECT id, type, item, amount, created_at, currency FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
             ps.setString(1, player.toString());
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) out.put(rs.getLong("id"), new OfflineEvent(rs.getString("type"), rs.getString("item"),
-                        rs.getDouble("amount"), rs.getLong("created_at")));
+                while (rs.next()) out.put(rs.getLong("id"), mapEvent(rs));
             }
         }
         return out;
@@ -754,11 +779,10 @@ public final class AuctionDatabase {
         var selected = new java.util.LinkedHashMap<Long, OfflineEvent>();
         try (Connection c = dataSource.getConnection()) {
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT id, type, item, amount, created_at FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
+                    "SELECT id, type, item, amount, created_at, currency FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
                 ps.setString(1, player.toString());
                 try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) selected.put(rs.getLong("id"), new OfflineEvent(rs.getString("type"), rs.getString("item"),
-                            rs.getDouble("amount"), rs.getLong("created_at")));
+                    while (rs.next()) selected.put(rs.getLong("id"), mapEvent(rs));
                 }
             }
             c.setAutoCommit(false);
@@ -818,7 +842,8 @@ public final class AuctionDatabase {
                 topBidder == null ? null : UUID.fromString(topBidder),
                 rs.getString("top_bidder_name"),
                 rs.getInt("bid_count"),
-                rs.getString("enchantments"));
+                rs.getString("enchantments"),
+                rs.getString("currency"));
     }
 
     static CollectionItem mapCollection(ResultSet rs) throws SQLException {

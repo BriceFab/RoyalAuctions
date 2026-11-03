@@ -70,6 +70,11 @@ public final class MessageManager {
                 .build());
     }
 
+    /** The raw text at {@code path}, or null when neither the server's file nor the bundled one has it. */
+    public String optional(String path) {
+        return messages.getString(path);
+    }
+
     /** Legacy '&' text for menu names and lore, placeholders filled; the menu colours it later. */
     public String text(String path, String... kv) {
         String value = raw(path).replace("{prefix}", prefix);

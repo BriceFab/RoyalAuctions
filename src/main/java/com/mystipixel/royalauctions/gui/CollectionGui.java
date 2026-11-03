@@ -19,14 +19,14 @@ public final class CollectionGui extends AuctionGui {
     private final MenuTemplate template;
     private final Player player;
     private final List<CollectionItem> items;
-    // Sale money waiting to be collected (manual-earnings-collection).
-    private final double earnings;
+    // Sale earnings waiting to be collected (manual-earnings-collection), per currency.
+    private final Map<String, Double> earnings;
     private final Map<Integer, CollectionItem> slotToItem = new HashMap<>();
     private int page;
     // One claim at a time; the menu reopens with fresh contents when it completes.
     private boolean claiming;
 
-    public CollectionGui(GuiManager manager, Player player, List<CollectionItem> items, double earnings) {
+    public CollectionGui(GuiManager manager, Player player, List<CollectionItem> items, Map<String, Double> earnings) {
         this.manager = manager;
         this.earnings = earnings;
         this.template = manager.menus().collection();
@@ -55,7 +55,7 @@ public final class CollectionGui extends AuctionGui {
                 "count", String.valueOf(items.size()),
                 "page", String.valueOf(page + 1),
                 "pages", String.valueOf(pages),
-                "earnings", manager.vault().format(earnings)));
+                "earnings", manager.formatTotals(earnings)));
         int earningsSlot = template.slotOf("earnings");
         if (earningsSlot >= 0 && !manager.config().manualEarnings()) {
             inventory.setItem(earningsSlot, template.maskAt(earningsSlot));

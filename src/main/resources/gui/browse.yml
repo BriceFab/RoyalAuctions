@@ -126,13 +126,16 @@ sounds:
     pitch: 1.2
 
 # Lines appended below each listing's own item lore.
-# Placeholders: %seller% %price% %starting_price% %bids% %top_bidder%
-#               %ends_in% %bid_label% %tier% %click_hint%
+# Placeholders: %seller% %price_formatted% %starting_price_formatted% %currency% %bids%
+#               %top_bidder% %ends_in% %bid_label% %tier% %click_hint%
+# The _formatted amounts are in the listing's currency ("$1,200.00", "1,200 tokens"); %price% and
+# %starting_price% are the bare numbers.
+# Sorting by price keeps each currency's listings together, ordered by price within it.
 listing-lore:
   buy-it-now:
     - ""
     - "&7Seller: &f%seller%"
-    - "&6Buy it now: &e%price% coins"
+    - "&6Buy it now: &e%price_formatted%"
     - ""
     - "&7Ends in: &f%ends_in%"
     - ""
@@ -140,7 +143,7 @@ listing-lore:
   auction:
     - ""
     - "&7Seller: &f%seller%"
-    - "&6%bid_label%: &e%price% coins"
+    - "&6%bid_label%: &e%price_formatted%"
     - "&7Top bidder: &f%top_bidder%"
     - "&7Bids: &f%bids%"
     - ""

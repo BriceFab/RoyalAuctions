@@ -19,10 +19,19 @@ between an external effect and its database acknowledgement, its outcome is unkn
 RoyalAuctions holds that exchange and its reservation for review. It does **not** guess that
 the payment failed or run it again automatically.
 
+Currencies registered by other plugins (see the README) receive the operation ID with every
+withdrawal and deposit. After applying an ID successfully, they return true for repeats without
+moving value again; a deposit that returned false is retried later with the same ID. An answer that completes exceptionally
+is held the same way as a crash. A payout whose currency is not registered stays `READY` and is
+paid, in that same currency, once the currency registers again.
+
+Recovery works in batches of 50. A row it cannot finish (a currency still missing, an error) is set
+aside for a minute without changing its state, so it cannot hold back the rest of the queue.
+
 A normal stop or reload does not create held exchanges. Shutdown waits (up to ten seconds) for
-exchanges already under way: an effect that already ran is acknowledged, and one that has not
-started yet is recorded as not applied, so its reservation is released (a payout goes back to
-`READY` and is paid after the restart). Only a crash, a kill, or a provider that throws leaves an
+exchanges already under way, including answers still pending from a currency: an effect that
+already ran is acknowledged, and one that has not started yet is recorded as not applied, so its
+reservation is released (a payout goes back to `READY` and is paid after the restart). Only a crash, a kill, or a provider that throws leaves an
 exchange `APPLYING`.
 
 | State | Meaning | Recovery |
