@@ -6,6 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
+import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +22,11 @@ public final class GuiUtil {
     /** Comma-grouped amount ("1,650,000,000"), trimming needless decimals. */
     public static String comma(double amount) {
         return COMMA.format(amount);
+    }
+
+    /** A fraction as a percentage with only the digits it needs: 0.075 is "7.5", 0.00001 is "0.001", never "0" for a positive rate. */
+    public static String percent(double fraction) {
+        return BigDecimal.valueOf(fraction).movePointRight(2).stripTrailingZeros().toPlainString();
     }
 
     public static ItemStack button(Material material, String name, List<String> lore) {

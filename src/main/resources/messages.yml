@@ -71,6 +71,8 @@ collection:
   full-inventory: "{prefix}&cYour inventory is full — make room first."
   claimed: "{prefix}&aClaimed &f{item}&a."
   earnings-claimed: "{prefix}&aCollected &f{amount} &afrom the sale of &f{item}&a."
+  # As above when listings.sale-tax kept part of the price. {tax} is the amount kept.
+  earnings-claimed-taxed: "{prefix}&aCollected &f{amount} &afrom the sale of &f{item}&a &7({tax} sale tax kept)."
   # The currency of some earnings is not available right now; they stay to be collected later.
   earnings-unavailable: "{prefix}&eYour {currency} earnings can't be paid right now. They stay here for later."
   no-earnings: "{prefix}&7You have no sale earnings to collect."
@@ -116,6 +118,8 @@ bid:
 away:
   header: "{prefix}&6Recent auction activity:"
   sold: "{prefix} &a✔ Sold &f{item}&a for &f{amount}&a."
+  # As sold when listings.sale-tax kept part of the price: {amount} is what was paid out, {tax} what was kept.
+  sold-taxed: "{prefix} &aSold &f{item}&a for &f{amount}&a &7({tax} sale tax kept)."
   outbid: "{prefix} &c⇧ Outbid on &f{item}&c — your &f{amount}&c was refunded."
   won: "{prefix} &6★ Won &f{item}&6 for &f{amount}&6 — claim it with &e/ah collect&6."
   expired: "{prefix} &e{count} listing(s) expired &7— &f/ah collect&7."
@@ -171,7 +175,7 @@ recovery:
   # {reason} is one of exchange.reasons, or a database error.
   refused: "Recovery refused: {reason}"
   header: "Pending auction operations, page {page} (up to 50): {count}"
-  entry: "{id} {kind} {state} player={player} amount={amount} currency={currency} listing={listing} collection={collection} origin={origin} updated={updated}"
+  entry: "{id} {kind} {state} player={player} amount={amount} currency={currency} tax={tax} listing={listing} collection={collection} origin={origin} updated={updated}"
 
 # Buttons of the text input dialog (search, price, custom bid). Escape works like Cancel.
 input:
@@ -229,6 +233,8 @@ gui:
   ends-in: "&7Ends in: &f{time}"
   duration: "&7Duration: &f{hours}h"
   listing-fee: "&7Listing fee: &c{fee}"
+  # Confirm screen line while listings.sale-tax is above 0. {percent} is e.g. 10.
+  sale-tax: "&7Sale tax: &c{percent}% &7of the final price"
   # Create screen, currency button: several currencies to pick from, or only one.
   currency-toggle: "&7Click to switch currency"
   currency-only: "&8The only currency you can list in"

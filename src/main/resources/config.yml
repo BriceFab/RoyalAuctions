@@ -67,6 +67,10 @@ listings:
   fee:
     percent: 0.02
     minimum: 5.0
+  # Fraction of every sale price (buy it now and won auctions) kept from the seller's earnings
+  # and removed from the economy: 0 = none, 0.05 = 5%. Rounded up to the currency's decimals.
+  # A purchase keeps the rate in force when it is reserved, an auction the rate when it ends.
+  sale-tax: 0
   # true: purchases go straight into the buyer's inventory when there is room,
   # overflowing to the collection. false: all purchases go to the collection.
   instant-deliver-purchases: true
@@ -90,7 +94,7 @@ bidding:
 
 # Currencies listings can be priced in. "money" is Vault's economy; other currencies come from
 # plugins that register a RoyalAuctions currency (see the README). Sellers pick the currency on the
-# create screen; each listing keeps its currency for its price, bids, fees and payouts.
+# create screen; each listing keeps its currency for its price, bids, fees, tax and payouts.
 #   enabled: offer it for new listings (money: true by default, others: false). Listings already
 #            in a currency keep trading while it is registered.
 # The name shown on screens is currencies.<id> in messages.yml.

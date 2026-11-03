@@ -1,6 +1,7 @@
 package com.mystipixel.royalauctions.data;
 
 import com.mystipixel.royalauctions.api.AuctionCurrency;
+import com.mystipixel.royalauctions.currency.Amounts;
 import com.mystipixel.royalcommon.storage.Dialect;
 import com.mystipixel.royalcommon.storage.TxRunner;
 
@@ -21,9 +22,20 @@ public final class AuctionTransactions {
     public enum State { PREPARED, APPLYING, APPLIED, FAILED, READY, DONE }
     public record Operation(UUID id, Kind kind, State state, UUID listing, UUID collection,
                             UUID player, String playerName, double amount, long expiry,
-                            long created, long updated, String worker, String note, String currency) { }
+                            long created, long updated, String worker, String note, String currency, double tax) { }
     public record Reservation(Operation operation, Listing listing, CollectionItem item) { }
     public record PaymentContext(UUID buyer, String itemName, boolean auction) { }
+    /** What a sale keeps back, read when a purchase is reserved or an auction ends. */
+    public interface Settlement {
+        Settlement NONE = new Settlement() {
+            @Override public double taxRate() { return 0; }
+            @Override public OptionalInt scale(String currency) { return OptionalInt.empty(); }
+        };
+        /** Fraction of the price kept from the seller, 0 to 1. */
+        double taxRate();
+        /** The currency's scale, empty while it is not registered. */
+        OptionalInt scale(String currency);
+    }
     public static final class Rejected extends SQLException {
         /** Key under {@code exchange.reasons.} in messages.yml; values fill its placeholders. */
         public final String key;
@@ -32,7 +44,9 @@ public final class AuctionTransactions {
     }
     private final DataSource source;
     private final TxRunner runner;
+    private volatile Settlement settlement = Settlement.NONE;
     public AuctionTransactions(TxRunner runner) { this.runner = runner; this.source = runner.dataSource(); }
+    public void settlement(Settlement settlement) { this.settlement = settlement; }
 
     /** Checks the tables are transactional; they are created by the schema migration. */
     public void init() throws SQLException {
@@ -104,16 +118,16 @@ public final class AuctionTransactions {
     }
     private static void insert(Connection c, Operation o) throws SQLException {
         update(c, "INSERT INTO ra_operations(id,kind,state,listing_id,collection_id,player_id,player_name,"
-                        + "amount,expiry,created_at,updated_at,worker,note,currency) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        + "amount,expiry,created_at,updated_at,worker,note,currency,tax) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 o.id, o.kind, o.state, o.listing, o.collection, o.player, o.playerName,
-                o.amount, o.expiry, o.created, o.updated, o.worker, o.note, o.currency);
+                o.amount, o.expiry, o.created, o.updated, o.worker, o.note, o.currency, o.tax);
     }
     private static Operation operation(ResultSet rs) throws SQLException {
         return new Operation(uuid(rs.getString("id")), Kind.valueOf(rs.getString("kind")),
                 State.valueOf(rs.getString("state")), uuid(rs.getString("listing_id")), uuid(rs.getString("collection_id")),
                 uuid(rs.getString("player_id")), rs.getString("player_name"), rs.getDouble("amount"),
                 rs.getLong("expiry"), rs.getLong("created_at"), rs.getLong("updated_at"),
-                rs.getString("worker"), rs.getString("note"), rs.getString("currency"));
+                rs.getString("worker"), rs.getString("note"), rs.getString("currency"), rs.getDouble("tax"));
     }
     public Operation get(UUID id) throws SQLException {
         try (Connection c = source.getConnection()) { return get(c, id); }
@@ -154,7 +168,7 @@ public final class AuctionTransactions {
     private Operation prepared(UUID id, Kind kind, UUID listing, UUID collection, UUID player, String name,
                                double amount, long expiry, String worker, String currency) {
         long now = System.currentTimeMillis();
-        return new Operation(id, kind, State.PREPARED, listing, collection, player, name, amount, expiry, now, now, worker, "", currency);
+        return new Operation(id, kind, State.PREPARED, listing, collection, player, name, amount, expiry, now, now, worker, "", currency, 0);
     }
 
     public Reservation reserveBid(UUID listingId, UUID player, String name, double amount,
@@ -172,7 +186,7 @@ public final class AuctionTransactions {
                 throw new Rejected("bid-too-low", "minimum", String.valueOf(minimum));
             long expiry = antiSnipeMillis > 0 ? Math.max(l.expiresAt(), Math.addExact(now, antiSnipeMillis)) : l.expiresAt();
             Operation o = new Operation(id, Kind.BID, State.PREPARED, listingId, null, player, name,
-                    amount, expiry, now, now, worker, "", l.currency());
+                    amount, expiry, now, now, worker, "", l.currency(), 0);
             insert(c, o);
             return new Reservation(o, l, null);
         });
@@ -186,7 +200,10 @@ public final class AuctionTransactions {
             if (l.status() != ListingStatus.ACTIVE || l.isAuction() || l.expiresAt() <= System.currentTimeMillis()
                     || l.sellerId().equals(player) || Double.compare(expectedPrice, l.price()) != 0)
                 throw new Rejected("price-changed");
-            Operation o = prepared(id, Kind.BUY, listingId, null, player, name, expectedPrice, 0, worker, l.currency());
+            // Fixed before the buyer pays: a replay settles on these terms, whatever the rate or currency is by then.
+            long now = System.currentTimeMillis();
+            Operation o = new Operation(id, Kind.BUY, State.PREPARED, listingId, null, player, name,
+                    expectedPrice, 0, now, now, worker, "", l.currency(), tax(l.currency(), expectedPrice));
             insert(c, o);
             return new Reservation(o, l, null);
         });
@@ -293,9 +310,9 @@ public final class AuctionTransactions {
                         o.amount, o.player, o.playerName, o.expiry, o.listing);
                 update(c, "INSERT INTO ra_bids(listing_id,bidder_id,bidder_name,amount,created_at) VALUES (?,?,?,?,?)",
                         o.listing, o.player, o.playerName, o.amount, o.created);
-                if (l.hasBids()) payout(c, key("refund/" + o.id), l, l.topBidderId(), l.topBidderName(), l.currentBid(), "OUTBID");
+                if (l.hasBids()) payout(c, key("refund/" + o.id), l, l.topBidderId(), l.topBidderName(), l.currentBid(), 0, "OUTBID");
             }
-            case BUY -> settle(c, listing(c, o.listing), o.player, o.playerName, o.amount);
+            case BUY -> settle(c, listing(c, o.listing), o.player, o.playerName, o.amount, o.tax);
             case CREATE -> {
                 update(c, "UPDATE ra_listings SET status='ACTIVE' WHERE id=? AND status='DRAFT'", o.listing);
                 update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
@@ -303,7 +320,7 @@ public final class AuctionTransactions {
             case CLAIM -> update(c, "DELETE FROM ra_collection WHERE id=? AND owner_id=?", o.collection, o.player);
             case PAYOUT -> {
                 Listing l = listing(c, o.listing);
-                event(c, o.player, o.note, l.displayName(), o.amount, o.currency);
+                event(c, o.player, o.note, l.displayName(), o.amount, o.currency, o.tax);
             }
             case CAPTURE -> { /* The captured item is now available in collection. */ }
         }
@@ -311,21 +328,37 @@ public final class AuctionTransactions {
         release(c, id);
         return null;
     }
-    private static void event(Connection c, UUID player, String type, String name, double amount, String currency) throws SQLException {
-        update(c, "INSERT INTO ra_events(player_id,type,item,amount,created_at,currency) VALUES (?,?,?,?,?,?)",
-                player, type, name, amount, System.currentTimeMillis(), currency);
+    private static void event(Connection c, UUID player, String type, String name, double amount, String currency, double tax) throws SQLException {
+        update(c, "INSERT INTO ra_events(player_id,type,item,amount,created_at,currency,tax) VALUES (?,?,?,?,?,?,?)",
+                player, type, name, amount, System.currentTimeMillis(), currency, tax);
     }
-    private static void payout(Connection c, UUID id, Listing l, UUID player, String name, double amount, String reason) throws SQLException {
+    // amount is what the player receives; tax is what was kept back from it, recorded so a retry pays the same.
+    private static void payout(Connection c, UUID id, Listing l, UUID player, String name, double amount, double tax, String reason) throws SQLException {
         validMoney(amount, true);
-        if (amount == 0) return;
-        insert(c, new Operation(id, Kind.PAYOUT, State.READY, l.id(), null, player, name,
-                amount, 0, System.currentTimeMillis(), 0, null, reason, l.currency()));
+        long now = System.currentTimeMillis();
+        if (amount > 0) {
+            insert(c, new Operation(id, Kind.PAYOUT, State.READY, l.id(), null, player, name,
+                    amount, 0, now, 0, null, reason, l.currency(), tax));
+            return;
+        }
+        // All of it taxed: settled here with its notice, the currency is never asked to pay 0.
+        insert(c, new Operation(id, Kind.PAYOUT, State.DONE, l.id(), null, player, name,
+                0, 0, now, now, null, reason, l.currency(), tax));
+        event(c, player, reason, l.displayName(), 0, l.currency(), tax);
     }
-    private static void settle(Connection c, Listing l, UUID buyer, String name, double price) throws SQLException {
+    // Rounded to the currency's scale; without it the sale waits rather than guess.
+    private double tax(String currency, double price) throws Rejected {
+        Settlement terms = settlement;
+        if (terms.taxRate() <= 0) return 0;
+        OptionalInt scale = terms.scale(currency);
+        if (scale.isEmpty()) throw new Rejected("currency-unavailable");
+        return Amounts.tax(price, terms.taxRate(), scale.getAsInt());
+    }
+    private static void settle(Connection c, Listing l, UUID buyer, String name, double price, double tax) throws SQLException {
         update(c, "UPDATE ra_listings SET status='SOLD',buyer_id=?,sold_at=? WHERE id=?", buyer, System.currentTimeMillis(), l.id());
         addItem(c, key("settlement/" + l.id()), buyer, l.itemData(), CollectionItem.Reason.PURCHASE, System.currentTimeMillis());
-        payout(c, key("sale/" + l.id()), l, l.sellerId(), l.sellerName(), price, "SOLD");
-        if (l.isAuction()) event(c, buyer, "WON", l.displayName(), price, l.currency());
+        payout(c, key("sale/" + l.id()), l, l.sellerId(), l.sellerName(), Amounts.net(price, tax), tax, "SOLD");
+        if (l.isAuction()) event(c, buyer, "WON", l.displayName(), price, l.currency(), 0);
     }
 
     /** Ignore the sweep's snapshot; lock and re-read both the deadline and funded bid state. */
@@ -334,11 +367,12 @@ public final class AuctionTransactions {
             UUID id = UUID.randomUUID(); lock(c, "listing/" + listingId, id);
             Listing l = listing(c, listingId);
             if (l.status() != ListingStatus.ACTIVE || l.expiresAt() > System.currentTimeMillis()) { release(c, id); return false; }
-            if (l.isAuction() && l.hasBids()) settle(c, l, l.topBidderId(), l.topBidderName(), l.currentBid());
+            if (l.isAuction() && l.hasBids())
+                settle(c, l, l.topBidderId(), l.topBidderName(), l.currentBid(), tax(l.currency(), l.currentBid()));
             else {
                 update(c, "UPDATE ra_listings SET status='EXPIRED' WHERE id=?", l.id());
                 addItem(c, key("settlement/" + l.id()), l.sellerId(), l.itemData(), CollectionItem.Reason.EXPIRED, System.currentTimeMillis());
-                event(c, l.sellerId(), "EXPIRED", null, 1, l.currency());
+                event(c, l.sellerId(), "EXPIRED", null, 1, l.currency(), 0);
             }
             release(c, id); return true;
         }); } catch (Rejected busy) { return false; }

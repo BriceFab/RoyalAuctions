@@ -198,7 +198,11 @@ public final class OfflineEventNotifier implements Listener {
             String item = event.item() == null ? messages.text("away.unknown-item") : event.item();
             String amount = currencies.format(event.currency(), event.amount());
             switch (event.type()) {
-                case OfflineEvent.SOLD -> messages.send(player, "away.sold", "item", item, "amount", amount);
+                case OfflineEvent.SOLD -> {
+                    if (event.tax() > 0) messages.send(player, "away.sold-taxed", "item", item, "amount", amount,
+                            "tax", currencies.format(event.currency(), event.tax()));
+                    else messages.send(player, "away.sold", "item", item, "amount", amount);
+                }
                 case OfflineEvent.OUTBID -> messages.send(player, "away.outbid", "item", item, "amount", amount);
                 case OfflineEvent.WON -> {
                     messages.send(player, "away.won", "item", item, "amount", amount);

@@ -125,6 +125,17 @@ class CurrencyExchangeTest {
         verify(guard, never()).report(any(), any(), any(), anyDouble(), anyBoolean(), any(), any(), any());
     }
 
+    @Test void saleTaxIsKeptFromTheSellerInTheListingsCurrency() throws Exception {
+        when(config.saleTax()).thenReturn(0.1); when(config.manualEarnings()).thenReturn(true);
+        service.purchase(buyer, seed(ListingType.BIN, "tokens", 15), () -> {});
+        var sale = sale();
+        assertEquals("tokens", sale.currency()); assertEquals(13, sale.amount()); assertEquals(2, sale.tax());
+        service.claimEarnings(seller, () -> {});
+        assertEquals(List.of("withdraw " + buyerId + " 15.0", "deposit " + sellerId + " 13.0"), tokens.calls);
+        verify(messages).send(seller, "collection.earnings-claimed-taxed", "amount", "13 tokens", "item", "test item", "tax", "2 tokens");
+        noMoney();
+    }
+
     @Test void slowCurrencyHoldsTheExchangeUntilItAnswers() throws Exception {
         var answer = new CompletableFuture<Boolean>(); tokens.answers.add(answer);
         Listing l = seed(ListingType.BIN, "tokens", 15);

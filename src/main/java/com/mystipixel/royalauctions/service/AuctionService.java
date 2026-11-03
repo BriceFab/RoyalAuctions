@@ -77,6 +77,10 @@ public final class AuctionService {
         this.plugin = plugin; this.db = db; this.transactions = db.transactions(); this.currencies = currencies;
         this.config = config; this.categories = categories; this.tiers = tiers;
         this.messages = messages; this.econGuard = econGuard; this.workers = workers;
+        transactions.settlement(new AuctionTransactions.Settlement() {
+            @Override public double taxRate() { return config.saleTax(); }
+            @Override public OptionalInt scale(String currency) { return currencies.scale(currency); }
+        });
         // New exchanges use the database journal; old file receipts retain their original IDs.
         legacyPayments = new PendingPayments(new PaymentJournal(plugin.getDataFolder().toPath().resolve("payments")),
                 vault, econGuard, plugin.getLogger());
@@ -195,6 +199,7 @@ public final class AuctionService {
                         Listing l = reserved.listing();
                         if (money(currency)) econGuard.report(player, name, "buy", l.price(), false, l.sellerId(), l.sellerName(), l.displayName());
                         tell(buyer, "exchange.purchased");
+                        eventReady.accept(l.sellerId()); // a fully taxed sale has no payout to announce it
                         // after a relog the purchase simply stays in the collection
                         if (config.instantDeliver() && Players.isCurrent(buyer))
                             claimById(buyer, settlementId(l.id()), () -> { if (Players.isCurrent(buyer)) onDone.run(); });
@@ -497,8 +502,8 @@ public final class AuctionService {
             try {
                 if (transactions.expire(l.id())) {
                     Listing settled = db.getListing(l.id()).orElse(l);
-                    eventReady.accept(settled.status() == ListingStatus.SOLD && settled.topBidderId() != null
-                            ? settled.topBidderId() : settled.sellerId());
+                    if (settled.status() == ListingStatus.SOLD && settled.topBidderId() != null) eventReady.accept(settled.topBidderId());
+                    eventReady.accept(settled.sellerId());
                 }
             }
             catch (Exception e) { logError("settling auction " + l.id(), e); }
@@ -520,6 +525,9 @@ public final class AuctionService {
                         case APPLIED, FAILED -> {
                             transactions.finish(o.id());
                             if (o.kind() == AuctionTransactions.Kind.PAYOUT) eventReady.accept(o.player());
+                            // a fully taxed sale has no payout to announce it
+                            if (o.kind() == AuctionTransactions.Kind.BUY && o.state() == AuctionTransactions.State.APPLIED)
+                                db.getListing(o.listing()).ifPresent(l -> eventReady.accept(l.sellerId()));
                         }
                         case PREPARED -> transactions.abandon(o.id());
                         case READY -> {
@@ -606,8 +614,11 @@ public final class AuctionService {
                         continue;
                     }
                     sync(() -> pay(o, context, outcome -> {
-                        if (outcome == ExternalEffectRunner.Result.COMPLETED)
-                            tell(player, "collection.earnings-claimed", "amount", format(o.currency(), o.amount()), "item", context.itemName());
+                        if (outcome == ExternalEffectRunner.Result.COMPLETED) {
+                            if (o.tax() > 0) tell(player, "collection.earnings-claimed-taxed", "amount", format(o.currency(), o.amount()),
+                                    "item", context.itemName(), "tax", format(o.currency(), o.tax()));
+                            else tell(player, "collection.earnings-claimed", "amount", format(o.currency(), o.amount()), "item", context.itemName());
+                        }
                         else result(player, o.id(), outcome);
                         if (remaining.decrementAndGet() == 0 && Players.isCurrent(player)) onDone.run();
                     }));
@@ -642,6 +653,7 @@ public final class AuctionService {
                 for (var o : transactions.pending(50, (page - 1) * 50)) lines.add(new String[] {
                         "id", String.valueOf(o.id()), "kind", String.valueOf(o.kind()), "state", String.valueOf(o.state()),
                         "player", String.valueOf(o.player()), "amount", String.valueOf(o.amount()), "currency", o.currency(),
+                        "tax", String.valueOf(o.tax()),
                         "listing", String.valueOf(o.listing()), "collection", String.valueOf(o.collection()),
                         "origin", String.valueOf(o.worker()), "updated", String.valueOf(java.time.Instant.ofEpochMilli(o.updated()))});
                 sync(() -> {

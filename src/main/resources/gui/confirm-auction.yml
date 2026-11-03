@@ -1,5 +1,5 @@
 # Confirm Auction (final review before posting).
-# Placeholders: %type% %price% %currency% %duration% %fee%
+# Placeholders: %type% %price% %currency% %duration% %fee% %tax_percent%
 
 title: "&8Confirm Auction"
 rows: 3

@@ -36,7 +36,7 @@ public final class AuctionDatabase {
         SQLITE, MYSQL
     }
 
-    static final int SCHEMA_VERSION = 3;
+    static final int SCHEMA_VERSION = 4;
     private static final int CHUNK = 500;
     // A server that has not heartbeat for this long is gone; its row only mattered for /ah recovery.
     private static final long WORKER_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1000;
@@ -142,6 +142,13 @@ public final class AuctionDatabase {
                     createIndex(st, "idx_ra_listings_status_currency_price", "ra_listings(status, currency, price)");
                     createIndex(st, "idx_ra_listings_status_category_currency_price",
                             "ra_listings(status, category, currency, price)");
+                }
+            }
+            if (from < 4) {
+                try (Statement st = c.createStatement()) {
+                    // Sale tax kept from a payout (and shown in its notice); the amount is already net of it.
+                    addColumn(st, "ra_operations", "tax", "DOUBLE PRECISION NOT NULL DEFAULT 0");
+                    addColumn(st, "ra_events", "tax", "DOUBLE PRECISION NOT NULL DEFAULT 0");
                 }
             }
         });
@@ -682,12 +689,12 @@ public final class AuctionDatabase {
 
     public void addEvent(UUID player, String type, String item, double amount, long createdAt)
             throws SQLException {
-        addEvent(player, type, item, amount, createdAt, com.mystipixel.royalauctions.api.AuctionCurrency.MONEY);
+        addEvent(player, type, item, amount, createdAt, com.mystipixel.royalauctions.api.AuctionCurrency.MONEY, 0);
     }
 
-    public void addEvent(UUID player, String type, String item, double amount, long createdAt, String currency)
+    public void addEvent(UUID player, String type, String item, double amount, long createdAt, String currency, double tax)
             throws SQLException {
-        String sql = "INSERT INTO ra_events (player_id, type, item, amount, created_at, currency) VALUES (?,?,?,?,?,?)";
+        String sql = "INSERT INTO ra_events (player_id, type, item, amount, created_at, currency, tax) VALUES (?,?,?,?,?,?,?)";
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, player.toString());
             ps.setString(2, type);
@@ -695,13 +702,14 @@ public final class AuctionDatabase {
             ps.setDouble(4, amount);
             ps.setLong(5, createdAt);
             ps.setString(6, currency);
+            ps.setDouble(7, tax);
             ps.executeUpdate();
         }
     }
 
     private static OfflineEvent mapEvent(ResultSet rs) throws SQLException {
         return new OfflineEvent(rs.getString("type"), rs.getString("item"), rs.getDouble("amount"),
-                rs.getLong("created_at"), rs.getString("currency"));
+                rs.getLong("created_at"), rs.getString("currency"), rs.getDouble("tax"));
     }
 
     /** The newest queued event's id, 0 when there are none; it only moves when an event is added or removed. */
@@ -744,7 +752,7 @@ public final class AuctionDatabase {
     public java.util.LinkedHashMap<Long, OfflineEvent> peekEvents(UUID player) throws SQLException {
         var out = new java.util.LinkedHashMap<Long, OfflineEvent>();
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
-                "SELECT id, type, item, amount, created_at, currency FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
+                "SELECT id, type, item, amount, created_at, currency, tax FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
             ps.setString(1, player.toString());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) out.put(rs.getLong("id"), mapEvent(rs));
@@ -779,7 +787,7 @@ public final class AuctionDatabase {
         var selected = new java.util.LinkedHashMap<Long, OfflineEvent>();
         try (Connection c = dataSource.getConnection()) {
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT id, type, item, amount, created_at, currency FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
+                    "SELECT id, type, item, amount, created_at, currency, tax FROM ra_events WHERE player_id=? ORDER BY created_at,id")) {
                 ps.setString(1, player.toString());
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) selected.put(rs.getLong("id"), mapEvent(rs));

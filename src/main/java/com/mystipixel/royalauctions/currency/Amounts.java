@@ -42,4 +42,18 @@ public final class Amounts {
     private static BigDecimal rounded(BigDecimal amount, int scale) {
         return scale == UNROUNDED ? amount : amount.setScale(scale, RoundingMode.CEILING);
     }
+
+    /** The tax kept from {@code gross}: {@code rate} of it, rounded up to {@code scale} (exact when unrounded), never more than {@code gross}. */
+    public static double tax(double gross, double rate, int scale) {
+        if (rate <= 0 || gross <= 0) {
+            return 0;
+        }
+        BigDecimal kept = rounded(BigDecimal.valueOf(gross).multiply(BigDecimal.valueOf(Math.min(1, rate))), scale);
+        return kept.min(BigDecimal.valueOf(gross)).doubleValue();
+    }
+
+    /** {@code gross} minus {@code tax}, exact in decimal. */
+    public static double net(double gross, double tax) {
+        return BigDecimal.valueOf(gross).subtract(BigDecimal.valueOf(tax)).doubleValue();
+    }
 }

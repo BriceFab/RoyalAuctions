@@ -38,6 +38,7 @@ public final class PluginConfig {
     private double feeMinimum;
     private boolean instantDeliver;
     private boolean manualEarnings;
+    private double saleTax;
     // Enabled currency ids: money first, then config order.
     private final List<String> currencies = new ArrayList<>();
 
@@ -98,6 +99,12 @@ public final class PluginConfig {
         this.expirySweepTicks = Math.max(1, c.getLong("expiry-sweep-minutes", 5)) * 60L * 20L;
         this.closedRetentionDays = Math.max(0, c.getInt("closed-retention-days", 90));
 
+        double tax = listings.getDouble("sale-tax", 0);
+        if (!(tax >= 0 && tax <= 1)) {
+            plugin.getLogger().warning("Config warning: listings.sale-tax (" + tax + ") must be between 0 and 1; using 0.");
+            tax = 0;
+        }
+        this.saleTax = tax;
         loadCurrencies(section(c, "currencies"));
     }
 
@@ -268,6 +275,11 @@ public final class PluginConfig {
 
     public double bidIncrementPercent() {
         return bidIncrementPercent;
+    }
+
+    /** Fraction of every sale price kept from the seller, 0 to 1. */
+    public double saleTax() {
+        return saleTax;
     }
 
     /** Currencies new listings may be priced in ({@code currencies.<id>.enabled}): money first, then config order. */

@@ -4,8 +4,31 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-// Price precision per currency scale.
+// Tax and price precision per currency scale.
 class AmountsTest {
+
+    @Test void taxRoundsUpToTheScaleAndNeverExceedsThePrice() {
+        assertEquals(2, Amounts.tax(15, 0.1, 0));
+        assertEquals(10, Amounts.tax(100, 0.1, 0), "0.1 is not stretched into 10.000000000000002");
+        assertEquals(1, Amounts.tax(1, 0.1, 0), "any taxed sale keeps at least one whole unit");
+        assertEquals(1.56, Amounts.tax(15.55, 0.1, 2));
+        assertEquals(0.01, Amounts.tax(0.05, 0.1, 2));
+        assertEquals(0.3, Amounts.tax(3, 0.1, 2));
+        assertEquals(0, Amounts.tax(15, 0, 0));
+        assertEquals(15, Amounts.tax(15, 1, 0));
+    }
+
+    @Test void taxOnAnUnroundedCurrencyIsExact() {
+        assertEquals(7, Amounts.tax(100, 0.07, Amounts.UNROUNDED), "not 7.000000000000001");
+        assertEquals(1.555, Amounts.tax(15.55, 0.1, Amounts.UNROUNDED));
+        assertEquals(0.0001, Amounts.tax(10, 0.00001, Amounts.UNROUNDED));
+        assertEquals(15.55, Amounts.tax(15.55, 1, Amounts.UNROUNDED));
+    }
+
+    @Test void netIsExactInDecimal() {
+        assertEquals(13.99, Amounts.net(15.55, 1.56));
+        assertEquals(0.7, Amounts.net(1, 0.3));
+    }
 
     @Test void fitsChecksTheDigitsAfterThePoint() {
         assertTrue(Amounts.fits(100, 0));

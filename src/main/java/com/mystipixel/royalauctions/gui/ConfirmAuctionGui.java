@@ -32,13 +32,15 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
         boolean auction = s.type() == ListingType.AUCTION;
         String currency = s.currency();
         double fee = manager.service().listingFee(currency, s.price());
+        String tax = GuiUtil.percent(manager.config().saleTax());
 
         template.applyStatic(inventory, Map.of(
                 "type", manager.t(auction ? "type.auction-plain" : "type.bin-plain"),
                 "price", manager.format(currency, s.price()),
                 "currency", manager.currencies().name(currency),
                 "duration", manager.t("time.duration", "hours", String.valueOf(s.durationHours())),
-                "fee", manager.format(currency, fee)));
+                "fee", manager.format(currency, fee),
+                "tax_percent", tax));
 
         int itemSlot = template.slotOf("item");
         if (itemSlot >= 0) {
@@ -48,6 +50,9 @@ public final class ConfirmAuctionGui extends CreateFlowGui {
             lore.add(manager.t(auction ? "starting-bid" : "price", "price", manager.format(currency, s.price())));
             lore.add(manager.t("duration", "hours", String.valueOf(s.durationHours())));
             lore.add(manager.t("listing-fee", "fee", manager.format(currency, fee)));
+            if (manager.config().saleTax() > 0) {
+                lore.add(manager.t("sale-tax", "percent", tax));
+            }
             inventory.setItem(itemSlot, GuiUtil.appendLore(s.item(), lore));
         }
     }

@@ -23,7 +23,10 @@ Currencies registered by other plugins (see the README) receive the operation ID
 withdrawal and deposit. After applying an ID successfully, they return true for repeats without
 moving value again; a deposit that returned false is retried later with the same ID. An answer that completes exceptionally
 is held the same way as a crash. A payout whose currency is not registered stays `READY` and is
-paid, in that same currency, once the currency registers again.
+paid, in that same currency, once the currency registers again. The sale tax is rounded to the
+currency's decimals, so it is fixed when a purchase is reserved, before the buyer pays, and when an
+auction ends (which waits for its currency); a replay settles on those terms. A sale taxed to
+nothing is recorded and announced without asking the currency to pay 0.
 
 Recovery works in batches of 50. A row it cannot finish (a currency still missing, an error) is set
 aside for a minute without changing its state, so it cannot hold back the rest of the queue.

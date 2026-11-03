@@ -55,6 +55,15 @@ class AuctionTransactionsTest {
         try (var c = connection()) { AuctionDatabase.insertListing(c, l, ListingStatus.ACTIVE); }
         return l;
     }
+    // A sale tax with the given currency scales; a currency left out is not registered.
+    void tax(double rate, Map<String, Integer> scales) {
+        tx.settlement(new AuctionTransactions.Settlement() {
+            @Override public double taxRate() { return rate; }
+            @Override public OptionalInt scale(String currency) {
+                return scales.containsKey(currency) ? OptionalInt.of(scales.get(currency)) : OptionalInt.empty();
+            }
+        });
+    }
     AuctionTransactions.Operation payout() throws SQLException {
         return tx.pending(50).stream().filter(o -> o.kind() == AuctionTransactions.Kind.PAYOUT).findFirst().orElseThrow();
     }
@@ -204,6 +213,91 @@ class AuctionTransactionsTest {
         complete(bid(l, alice, 100), true); complete(bid(l, bob, 110), true);
         var refund = payout();
         assertEquals(alice, refund.player()); assertEquals("tokens", refund.currency()); assertEquals(100, refund.amount());
+    }
+
+    @Test void saleTaxIsKeptRoundedUpToTheCurrencyAndAFailedPayoutRetriesTheSameAmount() throws Exception {
+        tax(0.1, Map.of("tokens", 0));
+        var l = seedIn(ListingType.BIN, "tokens", 15);
+        assertEquals("tokens", current(l).currency());
+        var buy = tx.reserveBuy(l.id(), alice, "Alice", 15, worker).operation();
+        assertEquals("tokens", buy.currency());
+        complete(buy, true);
+        var payout = payout();
+        assertEquals("tokens", payout.currency()); assertEquals(13, payout.amount()); assertEquals(2, payout.tax());
+        complete(payout, false);
+        var retry = tx.get(payout.id());
+        assertEquals(READY, retry.state()); assertEquals(13, retry.amount()); assertEquals(2, retry.tax());
+        tax(0.5, Map.of("tokens", 0));
+        complete(retry, true);
+        var sold = db.peekEvents(seller).values().iterator().next();
+        assertEquals(OfflineEvent.SOLD, sold.type()); assertEquals("tokens", sold.currency());
+        assertEquals(13, sold.amount(), "the rate in force at the sale applies, not a later one"); assertEquals(2, sold.tax());
+    }
+
+    @Test void saleTaxRoundsUpToTheCent() throws Exception {
+        tax(0.1, Map.of("money", 2));
+        var l = seedIn(ListingType.BIN, "money", 15.55);
+        complete(tx.reserveBuy(l.id(), alice, "Alice", 15.55, worker).operation(), true);
+        assertEquals(1.56, payout().tax()); assertEquals(13.99, payout().amount());
+    }
+
+    @Test void taxedAuctionWaitsForItsCurrencyAndRefundsInIt() throws Exception {
+        tax(0.1, Map.of());
+        var l = seedIn(ListingType.AUCTION, "tokens", 100);
+        complete(bid(l, alice, 100), true); complete(bid(l, bob, 110), true);
+        var refund = payout();
+        assertEquals(alice, refund.player()); assertEquals("tokens", refund.currency()); assertEquals(0, refund.tax());
+        expireNow(l);
+        assertFalse(tx.expire(l.id()), "the tax can't be rounded without the currency's scale");
+        assertEquals(ListingStatus.ACTIVE, current(l).status()); assertEquals(0, count("ra_operation_locks"));
+        tax(0.1, Map.of("tokens", 0));
+        assertTrue(tx.expire(l.id()));
+        var sale = tx.pending(50).stream().filter(o -> "SOLD".equals(o.note())).findFirst().orElseThrow();
+        assertEquals(seller, sale.player()); assertEquals(99, sale.amount()); assertEquals(11, sale.tax());
+    }
+
+    @Test void aPaidPurchaseSettlesOnTheTaxFixedBeforeTheBuyerPaid() throws Exception {
+        tax(0.1, Map.of("tokens", 0));
+        var l = seedIn(ListingType.BIN, "tokens", 15);
+        var buy = tx.reserveBuy(l.id(), alice, "Alice", 15, worker).operation();
+        assertEquals(2, buy.tax(), "fixed with the reservation");
+        assertTrue(tx.begin(buy.id(), worker)); tx.acknowledge(buy.id(), true);
+        tax(0.5, Map.of());
+        assertTrue(tx.recoverable(50).stream().anyMatch(o -> o.id().equals(buy.id())));
+        tx.finish(buy.id());
+        assertEquals(DONE, tx.get(buy.id()).state(), "settles without its currency registered");
+        assertEquals(ListingStatus.SOLD, current(l).status());
+        assertEquals(13, payout().amount()); assertEquals(2, payout().tax());
+    }
+
+    @Test void aPurchaseWithoutTheCurrencysScaleIsRefusedBeforeAnyPayment() throws Exception {
+        tax(0.1, Map.of());
+        var l = seedIn(ListingType.BIN, "tokens", 15);
+        var refused = assertThrows(AuctionTransactions.Rejected.class, () -> tx.reserveBuy(l.id(), alice, "Alice", 15, worker));
+        assertEquals("currency-unavailable", refused.key);
+        assertTrue(tx.pending(50).isEmpty()); assertEquals(0, count("ra_operation_locks"));
+    }
+
+    @Test void aSaleTaxedToNothingKeepsItsRecordAndNotice() throws Exception {
+        tax(0.1, Map.of("tokens", 0));
+        var bin = seedIn(ListingType.BIN, "tokens", 1);
+        complete(tx.reserveBuy(bin.id(), alice, "Alice", 1, worker).operation(), true);
+        tax(1, Map.of("tokens", 0));
+        var auction = seedIn(ListingType.AUCTION, "tokens", 5);
+        complete(bid(auction, bob, 5), true); expireNow(auction); assertTrue(tx.expire(auction.id()));
+
+        assertTrue(tx.pending(50).isEmpty(), "nothing is left to pay");
+        assertTrue(tx.recoverable(50).isEmpty()); assertTrue(tx.unclaimedEarnings(seller).isEmpty());
+        var sales = db.peekEvents(seller).values().stream().filter(e -> OfflineEvent.SOLD.equals(e.type())).toList();
+        assertEquals(2, sales.size());
+        assertEquals(0, sales.get(0).amount()); assertEquals(1, sales.get(0).tax()); assertEquals("tokens", sales.get(0).currency());
+        assertEquals(0, sales.get(1).amount()); assertEquals(5, sales.get(1).tax());
+        try (var c = connection(); var s = c.createStatement();
+             var rs = s.executeQuery("SELECT amount,tax,state FROM ra_operations WHERE kind='PAYOUT' AND note='SOLD' ORDER BY tax")) {
+            assertTrue(rs.next()); assertEquals(0, rs.getDouble(1)); assertEquals(1, rs.getDouble(2)); assertEquals("DONE", rs.getString(3));
+            assertTrue(rs.next()); assertEquals(5, rs.getDouble(2)); assertFalse(rs.next());
+        }
+        assertEquals(ListingStatus.SOLD, current(bin).status()); assertEquals(ListingStatus.SOLD, current(auction).status());
     }
 
     @Test void deferredAppliedOperationStepsAsideWithoutChangingState() throws Exception {
@@ -565,6 +659,7 @@ class AuctionTransactionsTest {
             dropIndex("idx_ra_listings_status_category_currency_price", "ra_listings");
             for (String table : List.of("ra_listings", "ra_operations", "ra_events")) sql("ALTER TABLE " + table + " DROP COLUMN currency");
         }
+        if (version < 4) for (String table : List.of("ra_operations", "ra_events")) sql("ALTER TABLE " + table + " DROP COLUMN tax");
         sql("UPDATE ra_schema_version SET version=? WHERE id=1", version);
     }
     int schemaVersion() throws SQLException {
@@ -606,5 +701,39 @@ class AuctionTransactionsTest {
         }
         complete(tx.get(payout), true);
         assertEquals(DONE, tx.get(payout).state());
+    }
+
+    @Test void versionThreeRowsKeepTheirCurrencyAndOweNoTax() throws Exception {
+        downgradeTo(3);
+        UUID listed = UUID.randomUUID(), sold = UUID.randomUUID(), payout = UUID.randomUUID(), refund = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+        String listing = "INSERT INTO ra_listings (id,seller_id,seller_name,item_data,display_name,category,type,price,"
+                + "created_at,expires_at,status,currency) VALUES (?,?,'Seller','AQID','Old item','misc','BIN',?,?,?,?,?)";
+        sql(listing, listed, seller, 2.5, now, now + 600_000, "ACTIVE", "gems");
+        sql(listing, sold, seller, 15, now, now, "SOLD", "tokens");
+        String operation = "INSERT INTO ra_operations (id,kind,state,listing_id,player_id,player_name,amount,expiry,created_at,updated_at,note,currency)"
+                + " VALUES (?,'PAYOUT','READY',?,?,?,?,0,?,0,?,?)";
+        sql(operation, payout, sold, seller, "Seller", 15, now, "SOLD", "tokens");
+        sql(operation, refund, listed, alice, "Alice", 0.75, now, "OUTBID", "gems");
+        sql("INSERT INTO ra_events (player_id,type,item,amount,created_at,currency) VALUES (?,'SOLD','Old item',15,?,'tokens')", seller, now);
+
+        for (int reopen = 0; reopen < 2; reopen++) {
+            open();
+            tax(0.1, Map.of("tokens", 0, "gems", 2));
+            assertEquals(AuctionDatabase.SCHEMA_VERSION, schemaVersion());
+            Listing gems = db.getListing(listed).orElseThrow();
+            assertEquals("gems", gems.currency()); assertEquals(2.5, gems.price());
+            var owed = tx.get(payout);
+            assertEquals("tokens", owed.currency()); assertEquals(15, owed.amount()); assertEquals(0, owed.tax());
+            var back = tx.get(refund);
+            assertEquals("gems", back.currency()); assertEquals(0.75, back.amount()); assertEquals(0, back.tax());
+            var event = db.peekEvents(seller).values().iterator().next();
+            assertEquals("tokens", event.currency()); assertEquals(15, event.amount()); assertEquals(0, event.tax());
+            assertEquals(1, db.peekEvents(seller).size());
+            if (reopen == 0) db.close();
+        }
+        complete(tx.get(payout), true);
+        var paid = tx.get(payout);
+        assertEquals(DONE, paid.state()); assertEquals(15, paid.amount(), "a sale owed before the tax existed is paid in full");
     }
 }

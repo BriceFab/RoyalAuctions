@@ -21,7 +21,7 @@ Part of a suite with [RoyalBank](https://github.com/joogiebear/RoyalBank),
 - [Categories](#categories)
 - [Item tiers](#item-tiers)
 - [Confirmations](#confirmations)
-- [Currencies](#currencies)
+- [Currencies and sale tax](#currencies-and-sale-tax)
 - [Storage](#storage)
 - [Reliability and recovery](#reliability-and-recovery)
 - [PlaceholderAPI](#placeholderapi)
@@ -350,10 +350,10 @@ refunds are still paid at once, and turning the option off pays out whatever is 
 Existing installs keep their `gui/collection.yml`; copy the `earnings` slot from the bundled file to
 get the button (effect `ah_claim_earnings`, placeholder `%earnings%`).
 
-## Currencies
+## Currencies and sale tax
 
 Listings are priced in Vault money by default. Other plugins can add currencies: each listing keeps
-the currency it was created in, and its bids, fee, payouts and outbid refunds all use it.
+the currency it was created in, and its bids, fee, tax, payouts and outbid refunds all use it.
 
 ```yaml
 currencies:
@@ -361,6 +361,8 @@ currencies:
     enabled: true
   tokens:             # registered by another plugin
     enabled: true     # off until enabled here
+listings:
+  sale-tax: 0.05      # 5% of every sale price kept from the seller, rounded up; 0 (default) = none
 ```
 
 - The create screen has a **Currency** button cycling through the enabled currencies that are
@@ -372,6 +374,9 @@ currencies:
   every digit.
 - While a listing's currency is not registered, buying and bidding on it are refused and payouts in
   it wait; they are never paid in another currency.
+- The tax is fixed when a purchase is reserved (before the buyer pays) or when an auction ends, so a
+  later rate change or a currency leaving does not change a sale already paid for. A sale whose tax
+  takes the whole price still shows in the seller's notices, with nothing paid out.
 - Sorting by price keeps each currency's listings together: currencies by id, then price within each.
 - Unclaimed earnings, the collection button and join reminders show one total per currency.
 - EconGuard reports and its trade veto only cover money.

@@ -103,10 +103,10 @@ class MessageRenderTest {
         assertEquals("Pending auction operations, page " + 2 + " (up to 50): " + 7,
                 m.text("recovery.header", "page", "2", "count", "7"));
         UUID player = UUID.randomUUID();
-        String old = id + " " + "BUY" + " " + "APPLYING" + " player=" + player + " amount=" + 12.5 + " currency=money listing=" + null
+        String old = id + " " + "BUY" + " " + "APPLYING" + " player=" + player + " amount=" + 12.5 + " currency=money tax=0.0 listing=" + null
                 + " collection=" + null + " origin=" + "w1" + " updated=" + java.time.Instant.ofEpochMilli(0);
         assertEquals(old, m.text("recovery.entry", "id", id.toString(), "kind", "BUY", "state", "APPLYING",
-                "player", player.toString(), "amount", String.valueOf(12.5), "currency", "money", "listing", "null", "collection", "null",
+                "player", player.toString(), "amount", String.valueOf(12.5), "currency", "money", "tax", "0.0", "listing", "null", "collection", "null",
                 "origin", "w1", "updated", java.time.Instant.ofEpochMilli(0).toString()));
         assertEquals("Recovery refused: The originating server is still active. Stop that process before reconciliation.",
                 m.text("recovery.refused", "reason", m.text("exchange.reasons.origin-active")));
