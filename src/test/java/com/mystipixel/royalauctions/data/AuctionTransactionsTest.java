@@ -177,6 +177,50 @@ class AuctionTransactionsTest {
         assertEquals(READY, tx.get(payout.id()).state());
     }
 
+    // An effect that answers later, from another thread.
+    @Test void asyncEffectIsAcknowledgedOnlyOnceItsAnswerArrives() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        var answer = new CompletableFuture<Boolean>(); List<ExternalEffectRunner.Result> results = new CopyOnWriteArrayList<>();
+        new ExternalEffectRunner(tx, Runnable::run, Runnable::run, worker, e -> fail(e)).executeAsync(o.id(), () -> answer, results::add);
+        assertEquals(APPLYING, tx.get(o.id()).state()); assertTrue(results.isEmpty());
+        assertTrue(tx.recoverable(50).isEmpty(), "an unanswered effect is never retried");
+        CompletableFuture.runAsync(() -> answer.complete(true)).get(10, TimeUnit.SECONDS);
+        assertEquals(List.of(ExternalEffectRunner.Result.COMPLETED), results);
+        assertEquals(DONE, tx.get(o.id()).state()); assertEquals(ListingStatus.SOLD, current(l).status());
+    }
+
+    @Test void asyncEffectAnsweringFalseIsDeclinedAndReleased() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        List<ExternalEffectRunner.Result> results = new CopyOnWriteArrayList<>();
+        new ExternalEffectRunner(tx, Runnable::run, Runnable::run, worker, e -> fail(e))
+                .executeAsync(o.id(), () -> CompletableFuture.supplyAsync(() -> false), results::add);
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(10), () -> { while (results.isEmpty()) Thread.onSpinWait(); });
+        assertEquals(List.of(ExternalEffectRunner.Result.DECLINED), results);
+        assertEquals(DONE, tx.get(o.id()).state()); assertEquals(ListingStatus.ACTIVE, current(l).status());
+        assertEquals(0, count("ra_operation_locks"));
+    }
+
+    @Test void asyncEffectFailingIsHeldAsUnknownAndNeverRetried() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        List<ExternalEffectRunner.Result> results = new CopyOnWriteArrayList<>(); List<Exception> errors = new CopyOnWriteArrayList<>();
+        var answer = new CompletableFuture<Boolean>();
+        new ExternalEffectRunner(tx, Runnable::run, Runnable::run, worker, errors::add).executeAsync(o.id(), () -> answer, results::add);
+        answer.completeExceptionally(new IllegalStateException("ledger timed out after the debit"));
+        assertEquals(List.of(ExternalEffectRunner.Result.PENDING), results);
+        assertEquals(1, errors.size()); assertInstanceOf(IllegalStateException.class, errors.getFirst());
+        assertEquals(APPLYING, tx.get(o.id()).state()); assertTrue(tx.recoverable(50).isEmpty());
+        assertEquals(ListingStatus.ACTIVE, current(l).status()); assertEquals(1, count("ra_operation_locks"));
+    }
+
+    @Test void closingRunnerNeverStartsAnAsyncEffect() throws Exception {
+        var l = seed(ListingType.BIN); var o = tx.reserveBuy(l.id(), alice, "Alice", 100, worker).operation();
+        AtomicInteger calls = new AtomicInteger(); List<ExternalEffectRunner.Result> results = new ArrayList<>();
+        new ExternalEffectRunner(tx, Runnable::run, Runnable::run, worker, e -> fail(e), () -> true)
+                .executeAsync(o.id(), () -> { calls.incrementAndGet(); return CompletableFuture.completedFuture(true); }, results::add);
+        assertEquals(0, calls.get()); assertEquals(List.of(ExternalEffectRunner.Result.DECLINED), results);
+        assertEquals(DONE, tx.get(o.id()).state()); assertEquals(ListingStatus.ACTIVE, current(l).status());
+    }
+
     @Test void deliveredEventsAreRemovedOnlyAfterDelivery() throws Exception {
         db.addEvent(alice, OfflineEvent.SOLD, "Item", 5, 1); db.addEvent(alice, OfflineEvent.OUTBID, "Item", 6, 2);
         var first = db.peekEvents(alice);
