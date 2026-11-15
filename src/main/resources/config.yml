@@ -107,6 +107,8 @@ currencies:
 #   1. match.items: an exact pin ("ecoitems:brazen_sword", "minecraft:trident").
 #      Wins over every other rule, in any category, at any priority.
 #   2. match.eco-namespaces: a whole eco plugin (talismans, ecoarmor, ...).
+#      match.item-namespaces: every item whose own id is in that namespace, such
+#      as the items a server or data pack registers (myserver:*).
 #   3. match.materials / material-suffixes / material-prefixes / tags: the item's
 #      base material, only a guess for custom items.
 #   4. match.any: true, the catch-all.
@@ -124,6 +126,7 @@ category-options:
 # number); by default that's tools_misc.yml.
 # Match rule types (a category matches if any of its rules do):
 #   eco-namespaces   : eco plugin namespaces, e.g. [talismans], [ecoitems]
+#   item-namespaces  : namespaces of the item ids themselves, e.g. [myserver]
 #   materials        : exact Bukkit material names
 #   material-suffixes: material name ends with any of these (e.g. _SWORD)
 #   material-prefixes: material name starts with any of these
