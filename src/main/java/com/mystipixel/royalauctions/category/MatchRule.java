@@ -16,6 +16,8 @@ import java.util.Set;
  *   <li>{@code items:}: exact pins ({@code ecoitems:brazen_sword}, {@code minecraft:trident}), checked
  *       across all categories first and winning regardless of priority.</li>
  *   <li>{@code eco-namespaces:}: a whole eco plugin ({@code talismans}).</li>
+ *   <li>{@code item-namespaces:}: every item whose own id is in that namespace, such as the items a
+ *       server or data pack registers ({@code scandicraft:*}).</li>
  *   <li>{@code materials}, {@code material-suffixes}, {@code material-prefixes}, {@code tags}: the
  *       base material, which is only a guess for custom items.</li>
  *   <li>{@code any: true}: the catch-all.</li>
@@ -29,16 +31,19 @@ public final class MatchRule {
 
     private final Set<String> pins;          // canonical keys: "namespace:id"
     private final Set<String> ecoNamespaces;
+    private final Set<String> itemNamespaces;
     private final Set<Material> materials;
     private final List<String> suffixes;
     private final List<String> prefixes;
     private final Set<Tag> tags;
     private final boolean any;
 
-    private MatchRule(Set<String> pins, Set<String> ecoNamespaces, Set<Material> materials,
-                      List<String> suffixes, List<String> prefixes, Set<Tag> tags, boolean any) {
+    private MatchRule(Set<String> pins, Set<String> ecoNamespaces, Set<String> itemNamespaces,
+                      Set<Material> materials, List<String> suffixes, List<String> prefixes, Set<Tag> tags,
+                      boolean any) {
         this.pins = pins;
         this.ecoNamespaces = ecoNamespaces;
+        this.itemNamespaces = itemNamespaces;
         this.materials = materials;
         this.suffixes = suffixes;
         this.prefixes = prefixes;
@@ -49,7 +54,7 @@ public final class MatchRule {
     /** Parses a {@code match:} section; unknown materials and tags go to {@code warn}. */
     public static MatchRule fromConfig(ConfigurationSection section, java.util.function.Consumer<String> warn) {
         if (section == null) {
-            return new MatchRule(Set.of(), Set.of(), Set.of(), List.of(), List.of(),
+            return new MatchRule(Set.of(), Set.of(), Set.of(), Set.of(), List.of(), List.of(),
                     EnumSet.noneOf(Tag.class), false);
         }
 
@@ -67,6 +72,11 @@ public final class MatchRule {
         Set<String> namespaces = new HashSet<>();
         for (String s : section.getStringList("eco-namespaces")) {
             namespaces.add(s.toLowerCase(Locale.ROOT));
+        }
+
+        Set<String> itemNamespaces = new HashSet<>();
+        for (String s : section.getStringList("item-namespaces")) {
+            itemNamespaces.add(s.toLowerCase(Locale.ROOT));
         }
 
         Set<Material> mats = new HashSet<>();
@@ -94,7 +104,7 @@ public final class MatchRule {
         }
 
         boolean any = section.getBoolean("any", false);
-        return new MatchRule(pins, namespaces, mats, suffixes, prefixes, tags, any);
+        return new MatchRule(pins, namespaces, itemNamespaces, mats, suffixes, prefixes, tags, any);
     }
 
     // Vanilla materials become minecraft:<material>; other namespaces are eco ids, kept verbatim.
@@ -128,6 +138,10 @@ public final class MatchRule {
             return "eco-namespace '" + ecoNamespace + "'";
         }
         Material mat = item.getType();
+        String itemNamespace = mat.getKey().getNamespace();
+        if (itemNamespaces.contains(itemNamespace)) {
+            return "item-namespace '" + itemNamespace + "'";
+        }
         if (materials.contains(mat)) {
             return "material " + mat.name();
         }

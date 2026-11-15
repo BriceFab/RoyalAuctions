@@ -204,6 +204,7 @@ match:
     - "ecoitems:brazen_sword"
     - "minecraft:trident"
   eco-namespaces: ["ecoarmor"]            # a whole eco plugin -> one category
+  item-namespaces: []                     # registered item ids, e.g. ["myserver"]
   material-suffixes: ["_SWORD", "_AXE"]
   materials: ["BOW", "CROSSBOW"]
   material-prefixes: []
@@ -221,7 +222,8 @@ a custom item. A custom dagger built on a `STICK` would land in Misc. So:
 
 1. **`match.items:`** — an exact pin. Accepts eco ids *and* vanilla (`minecraft:trident`).
    **Beats every other rule, in any category, at any priority.** This is the escape hatch.
-2. `match.eco-namespaces:` — a whole eco plugin maps to one category.
+2. `match.eco-namespaces:` — a whole eco plugin maps to one category. `match.item-namespaces:` does
+   the same for items registered under their own id namespace (`myserver:ruby`), not on a base material.
 3. `materials` / suffixes / prefixes / `tags` — inference from the base material.
 4. `any: true` — the catch-all.
 
