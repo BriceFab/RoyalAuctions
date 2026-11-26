@@ -23,6 +23,7 @@ import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -133,6 +134,14 @@ class GuiManagerTest {
         ArgumentCaptor<Consumer<UUID>> captured = ArgumentCaptor.forClass(Consumer.class);
         verify(q.service(), times(1)).capture(any(), anyInt(), any(), captured.capture());
         captured.getValue().accept(null);
+        q.manager().quickSell(q.player(), "50");
+        verify(q.service(), times(2)).capture(any(), anyInt(), any(), any());
+    }
+
+    @Test void aQuickSellThatThrowsDoesNotBlockTheNext() {
+        QuickSell q = quickSellSetup();
+        doThrow(new IllegalStateException("boom")).doNothing().when(q.service()).capture(any(), anyInt(), any(), any());
+        assertThrows(IllegalStateException.class, () -> q.manager().quickSell(q.player(), "50"));
         q.manager().quickSell(q.player(), "50");
         verify(q.service(), times(2)).capture(any(), anyInt(), any(), any());
     }

@@ -336,13 +336,23 @@ public final class GuiManager {
         if (!quickSales.add(seller)) return;
         ItemStack item = held.clone();
         long duration = config.durationMillisFor(config.defaultDurationHours());
-        service.capture(player, slot, item, collection -> {
-            if (collection == null) { quickSales.remove(seller); return; }
-            service.createListing(player, collection, item, price, ListingType.BIN, duration, currency, listed -> {
-                quickSales.remove(seller);
-                if (!listed) service.claimById(player, collection, () -> {});
+        try {
+            service.capture(player, slot, item, collection -> {
+                if (collection == null) { quickSales.remove(seller); return; }
+                try {
+                    service.createListing(player, collection, item, price, ListingType.BIN, duration, currency, listed -> {
+                        quickSales.remove(seller);
+                        if (!listed) service.claimById(player, collection, () -> {});
+                    });
+                } catch (RuntimeException e) {
+                    quickSales.remove(seller);
+                    throw e;
+                }
             });
-        });
+        } catch (RuntimeException e) {
+            quickSales.remove(seller);
+            throw e;
+        }
     }
 
     public void cancelCreate(Player player) {
