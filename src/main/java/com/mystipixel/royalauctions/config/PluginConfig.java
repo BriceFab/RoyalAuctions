@@ -150,6 +150,11 @@ public final class PluginConfig {
         return s != null ? s : parent.createSection(path);
     }
 
+    /** Extra labels for the auction command, such as a translated name. Registered once at startup. */
+    public List<String> commandAliases() {
+        return plugin.getConfig().getStringList("command-aliases");
+    }
+
     public ConfigurationSection storageSection() {
         ConfigurationSection s = plugin.getConfig().getConfigurationSection("storage");
         return s != null ? s : plugin.getConfig().createSection("storage");

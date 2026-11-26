@@ -177,6 +177,10 @@ tiers:
 # Browse sort: NEWEST, OLDEST, PRICE_LOW, PRICE_HIGH, ENDING_SOON
 default-sort: NEWEST
 
+# Extra names for /ah, e.g. [hdv]. They run the same command with its tab completion and permissions.
+# A name another plugin already uses is skipped with a warning. Restart to apply.
+command-aliases: []
+
 # How often (in minutes) the plugin sweeps for expired listings.
 expiry-sweep-minutes: 5
 
