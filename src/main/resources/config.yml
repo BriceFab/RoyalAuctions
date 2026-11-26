@@ -178,7 +178,8 @@ tiers:
 default-sort: NEWEST
 
 # Extra names for /ah, e.g. [hdv]. They run the same command with its tab completion and permissions.
-# A name another plugin already uses is skipped with a warning. Restart to apply.
+# A name another plugin's command already uses is skipped, another plugin's alias is replaced;
+# both log a warning. Restart to apply.
 command-aliases: []
 
 # How often (in minutes) the plugin sweeps for expired listings.

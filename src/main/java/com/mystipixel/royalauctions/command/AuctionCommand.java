@@ -68,7 +68,10 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
             case "browse" -> gui.openBrowse(player);
             case "bids" -> gui.openBids(player);
             case "sell", "create" -> {
-                if (args.length > 1) {
+                if (args.length > 2) {
+                    // "/ah sell 1 000" must not list at 1.
+                    messages.send(player, "sell.usage");
+                } else if (args.length == 2) {
                     gui.quickSell(player, args[1]);
                 } else if (!player.hasPermission("royalauctions.sell")) {
                     messages.send(player, "general.no-permission");
