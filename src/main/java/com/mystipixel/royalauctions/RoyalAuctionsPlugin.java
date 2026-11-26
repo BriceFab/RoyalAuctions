@@ -381,6 +381,11 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         new com.mystipixel.royalauctions.config.ConfigValidator(this, config).validate();
     }
 
+    /** The menus and the service behind them, for an {@link com.mystipixel.royalauctions.api.AuctionMenuProvider}. */
+    public GuiManager guiManager() {
+        return guiManager;
+    }
+
     public PluginConfig pluginConfig() {
         return config;
     }

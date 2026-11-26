@@ -5,6 +5,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.InventoryView;
+import org.bukkit.plugin.ServicesManager;
 import com.mystipixel.royalauctions.data.Listing;
 import com.mystipixel.royalauctions.service.AuctionService;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,7 @@ class GuiManagerTest {
         AuctionService service = mock(AuctionService.class);
         GuiManager manager = new GuiManager(null, service, null, null, null, null, null, null, null, null);
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(Bukkit::getServicesManager).thenReturn(mock(ServicesManager.class)); // no menu provider
             bukkit.when(() -> Bukkit.getPlayer(id)).thenReturn(held);
             manager.openBids(held);
             manager.handleQuit(held);

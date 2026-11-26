@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
+import com.mystipixel.royalauctions.api.AuctionMenuProvider;
 import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
@@ -63,6 +64,7 @@ public final class GuiManager {
     }
 
     public void openHub(Player player) {
+        if (provided(player, AuctionMenuProvider.Menu.HUB, null)) return;
         int ticket = ticket(player);
         service.loadHubCounts(player.getUniqueId(), counts -> {
             if (!current(player, ticket)) return;
@@ -77,6 +79,7 @@ public final class GuiManager {
     }
 
     public void openBids(Player player, int page) {
+        if (provided(player, AuctionMenuProvider.Menu.BIDS, null)) return;
         int ticket = ticket(player);
         service.loadBidListings(player.getUniqueId(), listings -> {
             if (!current(player, ticket)) return;
@@ -103,6 +106,7 @@ public final class GuiManager {
     }
 
     public void openBrowse(Player player, String category, String search, SortOrder sort, int page) {
+        if (provided(player, AuctionMenuProvider.Menu.BROWSE, search)) return;
         // Open first, then fill: the page arrives async and the menu checks it is still open first.
         ticket(player);
         BrowseGui gui = new BrowseGui(this, player, category, search, sort);
@@ -171,6 +175,7 @@ public final class GuiManager {
     }
 
     public void openCollection(Player player, int page) {
+        if (provided(player, AuctionMenuProvider.Menu.COLLECTION, null)) return;
         int ticket = ticket(player);
         service.loadCollection(player.getUniqueId(), items -> {
             if (!current(player, ticket)) return;
@@ -196,6 +201,7 @@ public final class GuiManager {
     }
 
     public void openListings(Player player, int page) {
+        if (provided(player, AuctionMenuProvider.Menu.LISTINGS, null)) return;
         int ticket = ticket(player);
         service.loadSellerListings(player.getUniqueId(), listings -> {
             if (!current(player, ticket)) return;
@@ -210,6 +216,7 @@ public final class GuiManager {
     }
 
     public void openCreate(Player player) {
+        if (provided(player, AuctionMenuProvider.Menu.SELL, null)) return;
         if (!player.hasPermission("royalauctions.sell")) {
             endCreateSession(player, true);
             messages.send(player, "general.no-permission");
@@ -462,6 +469,12 @@ public final class GuiManager {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    // A registered AuctionMenuProvider (another plugin's screens) opens the menu instead when it accepts it.
+    private static boolean provided(Player player, AuctionMenuProvider.Menu menu, String search) {
+        AuctionMenuProvider provider = Bukkit.getServicesManager().load(AuctionMenuProvider.class);
+        return provider != null && provider.open(player, menu, search);
     }
 
     public AuctionService service() {
