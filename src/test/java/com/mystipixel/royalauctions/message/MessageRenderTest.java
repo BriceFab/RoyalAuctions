@@ -57,6 +57,7 @@ class MessageRenderTest {
                 "&e/ah bids &7- auctions you've bid on",
                 "&e/ah <player> &7- view a player's auctions",
                 "&e/ah sell &7- open the Create Auction menu",
+                "&e/ah sell <price> &7- list the held item at a fixed price",
                 "&e/ah search <query> &7- search by name or enchantment",
                 "&e/ah listings &7- manage your listings",
                 "&e/ah collect &7- claim purchases & returns"),
@@ -180,7 +181,7 @@ class MessageRenderTest {
         MessageManager m = manager();
         assertEquals("&6[AH] &cNope.", m.text("general.no-permission"));
         assertEquals("&cHold the item you want to inspect.", m.text("inspect.hold-item"));
-        assertEquals(9, m.lines("help").size());
+        assertEquals(10, m.lines("help").size());
         assertEquals("{seconds}s", m.text("gui.time.seconds"));
         assertEquals("&6[AH] &eAn auction payment is on hold. Staff can check its status; do not repeat the transaction.",
                 m.text("payment-pending"));

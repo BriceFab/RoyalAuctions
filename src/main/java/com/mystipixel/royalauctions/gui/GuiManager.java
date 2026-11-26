@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
@@ -295,6 +296,46 @@ public final class GuiManager {
                 createSessions.remove(uuid);
                 if (Players.isCurrent(player)) openListings(player);
             } else if (Players.isCurrent(player)) openCreate(player);
+        });
+    }
+
+    /**
+     * {@code /ah sell <price>}: lists the held stack at a fixed price in money, without the menus. Like the
+     * create menu, the item goes into collection custody first and comes back if the listing is refused.
+     */
+    public void quickSell(Player player, String rawPrice) {
+        if (!player.hasPermission("royalauctions.sell")) {
+            messages.send(player, "general.no-permission");
+            return;
+        }
+        Double price = parsePositive(rawPrice);
+        if (price == null) {
+            messages.send(player, "sell.usage");
+            return;
+        }
+        String currency = AuctionCurrency.MONEY;
+        if (!currencies.offers(currency)) {
+            messages.send(player, "exchange.currency-unavailable");
+            return;
+        }
+        int scale = currencies.scale(currency).orElse(0);
+        if (!Amounts.fits(price, scale)) {
+            service.tooPrecise(player, scale);
+            return;
+        }
+        int slot = player.getInventory().getHeldItemSlot();
+        ItemStack held = player.getInventory().getItem(slot);
+        if (held == null || held.isEmpty()) {
+            messages.send(player, "sell.hand-empty");
+            return;
+        }
+        ItemStack item = held.clone();
+        long duration = config.durationMillisFor(config.defaultDurationHours());
+        service.capture(player, slot, item, collection -> {
+            if (collection == null) return;
+            service.createListing(player, collection, item, price, ListingType.BIN, duration, currency, listed -> {
+                if (!listed) service.claimById(player, collection, () -> {});
+            });
         });
     }
 
