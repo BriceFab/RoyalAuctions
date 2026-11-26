@@ -25,6 +25,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -44,6 +45,8 @@ public final class GuiManager {
     private final SearchTerms searchTerms = new SearchTerms();
 
     private final Map<UUID, CreateSession> createSessions = new ConcurrentHashMap<>();
+    // Sellers with a /ah sell <price> in flight: each attempt journals a capture before the slot check.
+    private final Set<UUID> quickSales = ConcurrentHashMap.newKeySet();
     // Per-player navigation counter: an async-loaded menu only opens if no newer request came in,
     // so a slow load cannot pop up over the create screen or a confirmation.
     private final Map<UUID, Integer> navigation = new ConcurrentHashMap<>();
@@ -329,11 +332,14 @@ public final class GuiManager {
             messages.send(player, "sell.hand-empty");
             return;
         }
+        UUID seller = player.getUniqueId();
+        if (!quickSales.add(seller)) return;
         ItemStack item = held.clone();
         long duration = config.durationMillisFor(config.defaultDurationHours());
         service.capture(player, slot, item, collection -> {
-            if (collection == null) return;
+            if (collection == null) { quickSales.remove(seller); return; }
             service.createListing(player, collection, item, price, ListingType.BIN, duration, currency, listed -> {
+                quickSales.remove(seller);
                 if (!listed) service.claimById(player, collection, () -> {});
             });
         });

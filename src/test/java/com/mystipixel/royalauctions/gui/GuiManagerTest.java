@@ -86,6 +86,7 @@ class GuiManagerTest {
         Player player = mock(Player.class);
         when(player.getInventory()).thenReturn(inventory);
         when(player.hasPermission("royalauctions.sell")).thenReturn(true);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         PluginConfig config = mock(PluginConfig.class);
         when(config.defaultDurationHours()).thenReturn(6);
         when(config.durationMillisFor(6)).thenReturn(21_600_000L);
@@ -122,6 +123,18 @@ class GuiManagerTest {
         verify(q.service()).createListing(any(), any(), any(), anyDouble(), any(), anyLong(), any(), listed.capture());
         listed.getValue().accept(false);
         verify(q.service()).claimById(eq(q.player()), eq(collection), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void aSecondQuickSellWaitsForTheFirst() {
+        QuickSell q = quickSellSetup();
+        q.manager().quickSell(q.player(), "50");
+        q.manager().quickSell(q.player(), "50");
+        ArgumentCaptor<Consumer<UUID>> captured = ArgumentCaptor.forClass(Consumer.class);
+        verify(q.service(), times(1)).capture(any(), anyInt(), any(), captured.capture());
+        captured.getValue().accept(null);
+        q.manager().quickSell(q.player(), "50");
+        verify(q.service(), times(2)).capture(any(), anyInt(), any(), any());
     }
 
     @Test void quickSellRefusesAnUnreadablePriceBeforeTakingTheItem() {
