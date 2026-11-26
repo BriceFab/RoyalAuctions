@@ -18,6 +18,7 @@ import com.mystipixel.royalauctions.search.SearchTerms;
 import com.mystipixel.royalauctions.service.AuctionService;
 import com.mystipixel.royalauctions.service.OfflineEventNotifier;
 import com.mystipixel.royalauctions.service.Workers;
+import com.mystipixel.royalauctions.util.CommandAlias;
 import com.mystipixel.royalcommon.storage.ServerId;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.event.EventHandler;
@@ -180,6 +181,7 @@ public final class RoyalAuctionsPlugin extends JavaPlugin {
         if (getCommand("auctionhouse") != null) {
             getCommand("auctionhouse").setExecutor(command);
             getCommand("auctionhouse").setTabCompleter(command);
+            CommandAlias.registerAll(this, getCommand("auctionhouse"), config.commandAliases());
         }
 
         scheduleExpiryTask();

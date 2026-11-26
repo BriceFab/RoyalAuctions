@@ -20,6 +20,7 @@ help:
   - "&e/ah bids &7- auctions you've bid on"
   - "&e/ah <player> &7- view a player's auctions"
   - "&e/ah sell &7- open the Create Auction menu"
+  - "&e/ah sell <price> &7- list the held item at a fixed price"
   - "{search-help}"
   - "&e/ah listings &7- manage your listings"
   - "&e/ah collect &7- claim purchases & returns"

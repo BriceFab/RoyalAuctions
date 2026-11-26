@@ -1,5 +1,6 @@
 package com.mystipixel.royalauctions.gui;
 
+import com.mystipixel.royalauctions.api.AuctionCurrency;
 import com.mystipixel.royalauctions.data.CollectionItem;
 import com.mystipixel.royalauctions.category.CategoryManager;
 import com.mystipixel.royalauctions.config.PluginConfig;
@@ -24,6 +25,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -43,6 +45,8 @@ public final class GuiManager {
     private final SearchTerms searchTerms = new SearchTerms();
 
     private final Map<UUID, CreateSession> createSessions = new ConcurrentHashMap<>();
+    // Sellers with a /ah sell <price> in flight: each attempt journals a capture before the slot check.
+    private final Set<UUID> quickSales = ConcurrentHashMap.newKeySet();
     // Per-player navigation counter: an async-loaded menu only opens if no newer request came in,
     // so a slow load cannot pop up over the create screen or a confirmation.
     private final Map<UUID, Integer> navigation = new ConcurrentHashMap<>();
@@ -296,6 +300,59 @@ public final class GuiManager {
                 if (Players.isCurrent(player)) openListings(player);
             } else if (Players.isCurrent(player)) openCreate(player);
         });
+    }
+
+    /**
+     * {@code /ah sell <price>}: lists the held stack at a fixed price in money, without the menus. Like the
+     * create menu, the item goes into collection custody first and comes back if the listing is refused.
+     */
+    public void quickSell(Player player, String rawPrice) {
+        if (!player.hasPermission("royalauctions.sell")) {
+            messages.send(player, "general.no-permission");
+            return;
+        }
+        Double price = parsePositive(rawPrice);
+        if (price == null) {
+            messages.send(player, "sell.usage");
+            return;
+        }
+        String currency = AuctionCurrency.MONEY;
+        if (!currencies.offers(currency)) {
+            messages.send(player, "exchange.currency-unavailable");
+            return;
+        }
+        int scale = currencies.scale(currency).orElse(0);
+        if (!Amounts.fits(price, scale)) {
+            service.tooPrecise(player, scale);
+            return;
+        }
+        int slot = player.getInventory().getHeldItemSlot();
+        ItemStack held = player.getInventory().getItem(slot);
+        if (held == null || held.isEmpty()) {
+            messages.send(player, "sell.hand-empty");
+            return;
+        }
+        UUID seller = player.getUniqueId();
+        if (!quickSales.add(seller)) return;
+        ItemStack item = held.clone();
+        long duration = config.durationMillisFor(config.defaultDurationHours());
+        try {
+            service.capture(player, slot, item, collection -> {
+                if (collection == null) { quickSales.remove(seller); return; }
+                try {
+                    service.createListing(player, collection, item, price, ListingType.BIN, duration, currency, listed -> {
+                        quickSales.remove(seller);
+                        if (!listed) service.claimById(player, collection, () -> {});
+                    });
+                } catch (RuntimeException e) {
+                    quickSales.remove(seller);
+                    throw e;
+                }
+            });
+        } catch (RuntimeException e) {
+            quickSales.remove(seller);
+            throw e;
+        }
     }
 
     public void cancelCreate(Player player) {
